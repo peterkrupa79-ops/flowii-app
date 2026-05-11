@@ -9,7 +9,7 @@ import {
   FileText, 
   TrendingUp,
   AlertCircle,
-  X,
+  X, 
   CheckCircle2,
   Menu,
   Database,
@@ -21,12 +21,14 @@ import {
   Globe,
   Lock,
   Terminal,
+  Layers,
   Zap,
   Info
 } from 'lucide-react';
 
-// --- KOMPONENTY PRE GRAFY ---
-
+/**
+ * Komponent pre stĺpcový graf vytvorený pomocou Tailwind CSS.
+ */
 const SimpleBarChart = ({ data, title }) => {
   const maxValue = Math.max(...data.map(d => d.value)) || 1;
 
@@ -56,6 +58,9 @@ const SimpleBarChart = ({ data, title }) => {
   );
 };
 
+/**
+ * Karta pre zobrazenie KPI metrík.
+ */
 const StatCard = ({ title, value, icon: Icon, trend, trendValue }) => (
   <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-start justify-between group hover:border-blue-300 transition-all text-left">
     <div className="space-y-3">
@@ -74,8 +79,9 @@ const StatCard = ({ title, value, icon: Icon, trend, trendValue }) => (
   </div>
 );
 
-// --- HLAVNÁ APLIKÁCIA ---
-
+/**
+ * Hlavný komponent dashboardu Flowii Stats.
+ */
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [apiKey, setApiKey] = useState('');
@@ -84,30 +90,40 @@ export default function App() {
   const [error, setError] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Debug nastavenia podľa dokumentácie
+  // Debug nastavenia
   const [urlPrefix, setUrlPrefix] = useState('api/'); 
   const [discoveryEndpoint, setDiscoveryEndpoint] = useState('partners/index');
   const [discoveryResult, setDiscoveryResult] = useState(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
 
   const [dashboardData, setDashboardData] = useState({
-    revenue: 0, activePartners: 0, openDeals: 0, unpaidInvoices: 0,
-    monthlyRevenue: [], monthlyDeals: []
+    revenue: 0,
+    activePartners: 0,
+    openDeals: 0,
+    unpaidInvoices: 0,
+    monthlyRevenue: [],
+    monthlyDeals: []
   });
 
   const generateMockData = () => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Máj', 'Jún', 'Júl', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
     const currentMonthIndex = new Date().getMonth();
     const mockRev = months.slice(Math.max(0, currentMonthIndex - 5), currentMonthIndex + 1).map(month => ({
-      label: month, value: Math.floor(Math.random() * 15000) + 5000
+      label: month, value: Math.floor(Math.random() * 10000) + 5000
     }));
     return {
-      revenue: 0, activePartners: 0, openDeals: 0, unpaidInvoices: 0,
+      revenue: mockRev.reduce((acc, curr) => acc + curr.value, 0),
+      activePartners: 142,
+      openDeals: 15,
+      unpaidInvoices: 4,
       monthlyRevenue: mockRev,
       monthlyDeals: mockRev.map(m => ({ label: m.label, value: Math.floor(m.value / 1000) }))
     };
   };
 
+  /**
+   * Spustenie testu pripojenia cez Debugger.
+   */
   const runDiscovery = async () => {
     if (!apiKey) {
       setError("Najprv vložte API kľúč v nastaveniach.");
@@ -125,13 +141,13 @@ export default function App() {
         },
         body: JSON.stringify({
           prefix: urlPrefix,
-          data: {} // Tu by mohli ísť filtre
+          data: {}
         })
       });
       
       const status = response.status;
       const data = await response.json();
-      const isHtml = data.raw && (data.raw.includes('<!DOCTYPE') || data.raw.includes('<html'));
+      const isHtml = data && data.raw && (data.raw.includes('<!DOCTYPE') || data.raw.includes('<html'));
 
       setDiscoveryResult({
         status,
@@ -149,8 +165,14 @@ export default function App() {
     }
   };
 
+  /**
+   * Načítanie reálnych dát z Flowii.
+   */
   const fetchFlowiiData = async (key) => {
-    if (!key) return;
+    if (!key || key === 'demo-key') {
+      setDashboardData(generateMockData());
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -171,14 +193,11 @@ export default function App() {
         fetchRaw('opportunities/index').catch(() => ({ data: [] }))
       ]);
 
-      const partnersList = partners.data || [];
-      const invoicesList = invoices.data || [];
-
       setDashboardData({
-        revenue: invoicesList.reduce((acc, inv) => acc + (parseFloat(inv.totalPrice) || 0), 0),
-        activePartners: partnersList.length,
+        revenue: (invoices.data || []).reduce((acc, inv) => acc + (parseFloat(inv.totalPrice) || 0), 0),
+        activePartners: (partners.data || []).length,
         openDeals: (opportunities.data || []).length,
-        unpaidInvoices: invoicesList.filter(inv => inv.paymentStatus !== 'paid').length,
+        unpaidInvoices: (invoices.data || []).filter(inv => inv.paymentStatus !== 'paid').length,
         monthlyRevenue: generateMockData().monthlyRevenue,
         monthlyDeals: generateMockData().monthlyDeals
       });
@@ -189,6 +208,10 @@ export default function App() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchFlowiiData(apiKey);
+  }, []);
 
   const handleSaveSettings = (e) => {
     e.preventDefault();
@@ -204,11 +227,14 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-800">
       
+      {/* SIDEBAR */}
       <aside className={`fixed inset-y-0 left-0 bg-slate-900 text-slate-300 w-72 transform transition-transform duration-500 ease-in-out z-40 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:static md:block border-r border-slate-800 shadow-2xl`}>
         <div className="p-8 flex items-center justify-between">
           <div className="flex items-center gap-3 text-white">
-            <div className="p-2.5 bg-blue-600 rounded-2xl shadow-lg"><BarChart3 className="w-6 h-6" /></div>
-            <span className="text-2xl font-black tracking-tighter uppercase italic">FlowiiStats</span>
+            <div className="p-2.5 bg-blue-600 rounded-2xl shadow-lg">
+              <BarChart3 className="w-6 h-6" />
+            </div>
+            <span className="text-2xl font-black tracking-tighter uppercase italic text-white">FlowiiStats</span>
           </div>
           <button className="md:hidden text-slate-400" onClick={() => setMobileMenuOpen(false)}><X /></button>
         </div>
@@ -219,147 +245,166 @@ export default function App() {
               key={item.id}
               onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl transition-all group ${
-                activeTab === item.id ? 'bg-blue-600 text-white shadow-xl' : 'hover:bg-slate-800 text-slate-400'
+                activeTab === item.id ? 'bg-blue-600 text-white shadow-xl translate-x-1' : 'hover:bg-slate-800 hover:text-white text-slate-400'
               }`}
             >
               <item.icon className="w-5 h-5" />
-              <span className="font-bold tracking-tight">{item.label}</span>
+              <span className="font-bold tracking-tight text-left">{item.label}</span>
             </button>
           ))}
         </nav>
 
         <div className="absolute bottom-10 w-full px-6 text-center">
-          <button onClick={() => setShowSettings(true)} className="w-full flex items-center gap-4 px-6 py-4 rounded-2xl bg-slate-800/40 text-slate-300 border border-slate-700/50 hover:bg-slate-800">
+          <button onClick={() => setShowSettings(true)} className="w-full flex items-center gap-4 px-6 py-4 rounded-2xl bg-slate-800/40 text-slate-300 border border-slate-700/50 hover:bg-slate-800 transition-colors">
             <Settings className="w-5 h-5" />
             <span className="font-bold text-sm tracking-wide">Nastavenia API</span>
           </button>
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col h-screen overflow-hidden text-left">
+      {/* HLAVNÝ OBSAH */}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden text-left text-slate-900">
         <header className="bg-white border-b border-slate-100 h-20 flex items-center justify-between px-8 shrink-0">
-          <button className="md:hidden p-2.5 bg-slate-50 rounded-xl" onClick={() => setMobileMenuOpen(true)}><Menu /></button>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">{menuItems.find(i => i.id === activeTab)?.label}</h1>
-          <button onClick={() => fetchFlowiiData(apiKey)} className="p-2 bg-slate-100 rounded-xl text-slate-600 hover:bg-blue-50">
+          <div className="flex items-center gap-4">
+            <button className="md:hidden p-2.5 bg-slate-50 rounded-xl" onClick={() => setMobileMenuOpen(true)}><Menu className="text-slate-600" /></button>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">{menuItems.find(i => i.id === activeTab)?.label}</h1>
+          </div>
+          
+          <button onClick={() => fetchFlowiiData(apiKey)} className="p-2 bg-slate-100 rounded-xl text-slate-600 hover:bg-blue-50 transition-colors">
             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </header>
 
-        <div className="flex-1 overflow-auto p-8 lg:p-12">
-          {activeTab === 'dashboard' && (
-            <div className="max-w-7xl mx-auto space-y-12 animate-in fade-in duration-700 text-left">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                <StatCard title="Celkové tržby" value={`${dashboardData.revenue.toLocaleString('sk-SK')} €`} icon={DollarSign} />
-                <StatCard title="Partneri" value={dashboardData.activePartners} icon={Users} />
-                <StatCard title="Obchody" value={dashboardData.openDeals} icon={Briefcase} />
-                <StatCard title="Nezaplatené" value={dashboardData.unpaidInvoices} icon={FileText} />
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                <div className="h-[450px]"><SimpleBarChart title="Mesačné tržby" data={dashboardData.monthlyRevenue} /></div>
-                <div className="h-[450px]"><SimpleBarChart title="Počet obchodov" data={dashboardData.monthlyDeals} /></div>
+        <div className="flex-1 overflow-auto p-8 lg:p-12 space-y-12">
+          {error && (
+            <div className="bg-rose-50 border-l-4 border-rose-500 p-6 rounded-r-3xl flex items-start gap-6 shadow-sm">
+              <AlertCircle className="w-6 h-6 text-rose-600 shrink-0" />
+              <div className="text-left">
+                <h3 className="text-rose-900 font-black text-lg">Chyba synchronizácie</h3>
+                <p className="text-rose-700 text-sm mt-1 font-semibold">{error}</p>
               </div>
             </div>
           )}
 
-          {activeTab === 'discovery' && (
-            <div className="max-w-4xl mx-auto space-y-8 animate-in slide-in-from-bottom duration-500">
-              <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden text-left">
-                <div className="absolute top-0 right-0 p-12 opacity-10"><Zap className="w-32 h-32 text-white" /></div>
-                <div className="relative z-10">
-                  <h2 className="text-3xl font-black mb-4 tracking-tight text-white">Flowii API Debugger v3</h2>
-                  <p className="text-slate-400 font-medium leading-relaxed mb-8 max-w-xl">
-                    Podľa dokumentácie Flowii vyžaduje metódu <b>POST</b>. Skúsime meniť prefix URL, kým neuvidíme zoznam partnerov.
-                  </p>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-left">
-                    <div className="space-y-2 text-left">
-                      <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2"><Globe className="w-3 h-3 text-slate-500"/> URL Prefix</label>
-                      <select 
-                         value={urlPrefix} 
-                         onChange={(e) => setUrlPrefix(e.target.value)}
-                         className="w-full bg-slate-800 border-2 border-slate-700 rounded-xl p-3 text-sm font-bold text-white outline-none focus:border-blue-500"
-                      >
-                        <option value="api/">Zjednodušený (api/)</option>
-                        <option value="api/v1/">Starší (api/v1/)</option>
-                        <option value="">Žiadny prefix (Čistý endpoint)</option>
-                      </select>
-                    </div>
-                    <div className="space-y-2 text-left">
-                      <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 text-left"><Layers className="w-3 h-3 text-slate-500"/> Endpoint</label>
-                      <input 
-                        type="text"
-                        value={discoveryEndpoint}
-                        onChange={(e) => setDiscoveryEndpoint(e.target.value)}
-                        className="w-full bg-slate-800 border-2 border-slate-700 rounded-xl p-3 text-sm font-bold text-white outline-none focus:border-blue-500"
-                        placeholder="napr. partners/index"
-                      />
-                    </div>
-                  </div>
-
-                  <button 
-                    onClick={runDiscovery}
-                    disabled={discoveryLoading}
-                    className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 py-4 rounded-2xl font-black flex items-center justify-center gap-3 shadow-lg active:scale-95 text-white uppercase text-xs tracking-widest"
-                  >
-                    {discoveryLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                    Otestovať Spojenie
-                  </button>
+          <div className="max-w-7xl mx-auto animate-in fade-in duration-700">
+            {activeTab === 'dashboard' && (
+              <div className="space-y-12 text-left">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                  <StatCard title="Celkové tržby" value={`${dashboardData.revenue.toLocaleString('sk-SK')} €`} icon={DollarSign} />
+                  <StatCard title="Partneri" value={dashboardData.activePartners} icon={Users} />
+                  <StatCard title="Obchody" value={dashboardData.openDeals} icon={Briefcase} />
+                  <StatCard title="Nezaplatené" value={dashboardData.unpaidInvoices} icon={FileText} />
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                  <div className="h-[450px]"><SimpleBarChart title="Mesačné tržby" data={dashboardData.monthlyRevenue} /></div>
+                  <div className="h-[450px]"><SimpleBarChart title="Počet obchodov" data={dashboardData.monthlyDeals} /></div>
                 </div>
               </div>
+            )}
 
-              {discoveryResult && (
-                <div className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm text-left">
-                  <div className="flex items-center justify-between mb-8">
-                    <div className="flex items-center gap-4 text-left">
-                      <div className={`p-3 rounded-2xl ${discoveryResult.success ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}><Database className="w-6 h-6" /></div>
-                      <div className="text-left">
-                        <h3 className="text-xl font-bold">Výsledok Odpovede</h3>
-                        <p className="text-slate-400 text-[10px] font-mono break-all">{discoveryResult.attemptedFullUrl}</p>
+            {activeTab === 'discovery' && (
+              <div className="max-w-4xl mx-auto space-y-8 animate-in slide-in-from-bottom duration-500 text-left">
+                <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-12 opacity-10"><Zap className="w-32 h-32 text-white" /></div>
+                  <div className="relative z-10">
+                    <h2 className="text-3xl font-black mb-4 tracking-tight text-white">Flowii API Debugger</h2>
+                    <p className="text-slate-400 font-medium leading-relaxed mb-8 max-w-xl">
+                      Overte presnú cestu k dátam podľa Flowii dokumentácie. Odporúčaný prefix je <code>api/</code>.
+                    </p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-left">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2"><Globe className="w-3 h-3 text-slate-500"/> URL Prefix</label>
+                        <select 
+                           value={urlPrefix} 
+                           onChange={(e) => setUrlPrefix(e.target.value)}
+                           className="w-full bg-slate-800 border-2 border-slate-700 rounded-xl p-3 text-sm font-bold text-white outline-none focus:border-blue-500"
+                        >
+                          <option value="api/">api/ (Zjednodušený)</option>
+                          <option value="api/v1/">api/v1/ (Štandardný)</option>
+                          <option value="">Žiadny prefix</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 text-left"><Layers className="w-3 h-3 text-slate-500"/> Endpoint</label>
+                        <input 
+                          type="text"
+                          value={discoveryEndpoint}
+                          onChange={(e) => setDiscoveryEndpoint(e.target.value)}
+                          className="w-full bg-slate-800 border-2 border-slate-700 rounded-xl p-3 text-sm font-bold text-white outline-none focus:border-blue-500"
+                          placeholder="napr. partners/index"
+                        />
                       </div>
                     </div>
-                    <div className={`px-5 py-2 rounded-full font-black text-xs uppercase tracking-widest ${discoveryResult.success ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>STATUS: {discoveryResult.status}</div>
-                  </div>
 
-                  <div className="space-y-4 text-left text-left">
-                    <div className="flex items-center gap-2 text-slate-400 text-xs font-black uppercase tracking-tighter text-left"><Code className="w-4 h-4 text-left" /> Odpoveď zo Servera</div>
-                    <div className="bg-slate-900 rounded-3xl p-8 overflow-hidden shadow-2xl text-left border border-slate-800">
-                      {discoveryResult.isHtml ? (
-                         <div className="space-y-4 text-left">
-                            <div className="flex items-center gap-2 text-rose-400 text-[10px] font-bold uppercase text-left"><Info className="w-3 h-3" /> HTML CHYBA (Zlé URL)</div>
-                            <div className="text-slate-500 text-[10px] font-mono break-all opacity-50 text-left">{discoveryResult.payload.raw}</div>
-                         </div>
-                      ) : (
-                        <pre className="text-emerald-400 text-[11px] font-mono overflow-auto max-h-[500px] leading-relaxed text-left">
-                          {JSON.stringify(discoveryResult.payload, null, 2)}
-                        </pre>
-                      )}
-                    </div>
+                    <button 
+                      onClick={runDiscovery}
+                      disabled={discoveryLoading}
+                      className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 py-4 rounded-2xl font-black flex items-center justify-center gap-3 shadow-lg active:scale-95 text-white uppercase text-xs tracking-widest"
+                    >
+                      {discoveryLoading ? <RefreshCw className="w-5 h-5 animate-spin text-white" /> : <Send className="w-5 h-5 text-white" />}
+                      Otestovať Spojenie
+                    </button>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
+
+                {discoveryResult && (
+                  <div className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm text-left">
+                    <div className="flex items-center justify-between mb-8">
+                      <div className="flex items-center gap-4 text-left">
+                        <div className={`p-3 rounded-2xl ${discoveryResult.success ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}><Database className="w-6 h-6" /></div>
+                        <div className="text-left">
+                          <h3 className="text-xl font-bold text-slate-900">Výsledok Odpovede</h3>
+                          <p className="text-slate-400 text-xs font-mono">{discoveryResult.attemptedFullUrl}</p>
+                        </div>
+                      </div>
+                      <div className={`px-5 py-2 rounded-full font-black text-xs uppercase tracking-widest ${discoveryResult.success ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>STATUS: {discoveryResult.status}</div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 text-slate-400 text-xs font-black uppercase tracking-tighter text-left"><Code className="w-4 h-4" /> Odpoveď zo Servera</div>
+                      <div className="bg-slate-900 rounded-3xl p-8 overflow-hidden shadow-2xl border border-slate-800">
+                        {discoveryResult.isHtml ? (
+                           <div className="space-y-4 text-left">
+                              <div className="flex items-center gap-2 text-rose-400 text-[10px] font-bold uppercase"><Info className="w-3 h-3" /> HTML CHYBA (Zlé URL)</div>
+                              <div className="text-slate-500 text-[10px] font-mono break-all opacity-50">{discoveryResult.payload?.raw}</div>
+                           </div>
+                        ) : (
+                          <pre className="text-emerald-400 text-[11px] font-mono overflow-auto max-h-[500px] leading-relaxed text-left">
+                            {JSON.stringify(discoveryResult.payload, null, 2)}
+                          </pre>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </main>
 
-      {/* Settings Modal */}
+      {/* MODAL NASTAVENÍ */}
       {showSettings && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-6 animate-in fade-in duration-300">
           <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg p-10 space-y-10 animate-in zoom-in-95 text-left">
             <div className="flex items-center justify-between">
-              <h3 className="text-2xl font-black text-slate-900 tracking-tight text-left">Nastavenia API</h3>
+              <h3 className="text-2xl font-black text-slate-900 tracking-tight">Nastavenia API</h3>
               <button onClick={() => setShowSettings(false)} className="p-3.5 hover:bg-slate-50 rounded-2xl border border-slate-100 text-slate-400"><X /></button>
             </div>
             <form onSubmit={handleSaveSettings} className="space-y-10 text-left">
-              <div className="space-y-5 text-left text-left">
-                <label className="block text-xs font-black text-slate-700 uppercase tracking-widest text-left">Flowii API Token</label>
+              <div className="space-y-5">
+                <label className="block text-xs font-black text-slate-700 uppercase tracking-widest">Flowii API Token</label>
                 <input
                   type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
                   placeholder="Vložte váš tajný kľúč..."
-                  className="w-full px-7 py-5 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-8 focus:ring-blue-50 focus:border-blue-500 outline-none transition-all font-mono shadow-inner text-slate-900 text-left"
+                  className="w-full px-7 py-5 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-8 focus:ring-blue-50 focus:border-blue-500 outline-none transition-all font-mono shadow-inner text-slate-900"
                 />
               </div>
-              <button type="submit" className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition-all uppercase text-xs tracking-widest shadow-lg active:scale-95 text-white">Synchronizovať</button>
+              <div className="flex flex-col gap-4 pt-4">
+                <button type="submit" className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition-all uppercase text-xs tracking-widest shadow-lg active:scale-95">Synchronizovať</button>
+                <button type="button" onClick={() => fetchFlowiiData('demo-key')} className="w-full py-2 text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors uppercase tracking-widest text-center">Pokračovať v Demo režime</button>
+              </div>
             </form>
           </div>
         </div>
