@@ -1,6 +1,5 @@
-// api/proxy.js
 export default async function handler(req, res) {
-  // Povolíme CORS pre túto našu funkciu
+  // Povolenie CORS hlavičiek pre komunikáciu s frontendom
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -9,27 +8,25 @@ export default async function handler(req, res) {
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
   );
 
-  // Ak ide o OPTIONS požiadavku (pre-flight), len odpovieme OK
+  // Ošetrenie OPTIONS požiadavky (pre-flight)
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
-  // Zistíme, ktorý endpoint chce naša aplikácia volať (napr. api.flowii.com/api/v1/partners)
   const targetEndpoint = req.query.endpoint;
 
   if (!targetEndpoint) {
     return res.status(400).json({ error: 'Chýba parameter endpoint' });
   }
 
-  // Flowii adresa
+  // Cieľová adresa Flowii API
   const flowiiUrl = `https://api.flowii.com/api/v1/${targetEndpoint}`;
 
   try {
-    // Vezmeme Authorization hlavičku (API kľúč), ktorú nám poslala naša React aplikácia
     const authHeader = req.headers.authorization;
 
-    // Pošleme požiadavku na Flowii server za používateľa
+    // Volanie Flowii servera zo server-side prostredia (obchádza CORS)
     const flowiiResponse = await fetch(flowiiUrl, {
       method: req.method,
       headers: {
@@ -41,11 +38,19 @@ export default async function handler(req, res) {
 
     const data = await flowiiResponse.json();
 
-    // Vrátime dáta z Flowii späť do našej React aplikácie
-    res.status(flowiiResponse.status).json(data);
+    // Ak Flowii vráti chybu (401, 403 atď.), vrátime ju s podrobnosťami
+    if (!flowiiResponse.ok) {
+       return res.status(flowiiResponse.status).json({
+           error: true,
+           message: data.message || `Flowii zamietlo prístup k ${targetEndpoint}.`
+       });
+    }
+
+    // Vrátenie úspešných dát späť do aplikácie
+    res.status(200).json(data);
 
   } catch (error) {
-    console.error('Chyba pri volaní Flowii:', error);
-    res.status(500).json({ error: 'Chyba servera pri komunikácii s Flowii' });
+    console.error('Chyba proxy servera:', error);
+    res.status(500).json({ error: 'Interná chyba servera pri komunikácii s Flowii' });
   }
 }

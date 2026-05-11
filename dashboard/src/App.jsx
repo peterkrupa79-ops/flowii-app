@@ -20,25 +20,25 @@ const SimpleBarChart = ({ data, title }) => {
   const maxValue = Math.max(...data.map(d => d.value)) || 1;
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col h-full">
-      <h3 className="text-lg font-semibold text-slate-800 mb-6">{title}</h3>
+    <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col h-full hover:shadow-md transition-shadow">
+      <h3 className="text-lg font-bold text-slate-800 mb-6">{title}</h3>
       <div className="flex-1 flex items-end justify-between gap-2 h-48 mt-auto">
         {data.map((item, index) => {
           const heightPercent = (item.value / maxValue) * 100;
           return (
             <div key={index} className="flex flex-col items-center flex-1 group">
               <div className="relative flex justify-center w-full h-full items-end">
-                {/* Tooltip */}
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-10 bg-slate-800 text-white text-xs py-1 px-2 rounded whitespace-nowrap pointer-events-none z-10">
+                {/* Tooltip pri hoveri */}
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-10 bg-slate-800 text-white text-[10px] py-1 px-2 rounded whitespace-nowrap pointer-events-none z-10 font-bold">
                   {item.value.toLocaleString('sk-SK')} €
                 </div>
-                {/* Bar */}
+                {/* Stĺpec grafu */}
                 <div 
-                  className="w-full max-w-[40px] bg-blue-500 rounded-t-md transition-all duration-500 ease-out group-hover:bg-blue-600"
-                  style={{ height: `${Math.max(heightPercent, 2)}%` }}
+                  className="w-full max-w-[44px] bg-blue-600 rounded-t-xl transition-all duration-500 ease-out group-hover:bg-blue-700 shadow-sm"
+                  style={{ height: `${Math.max(heightPercent, 5)}%` }}
                 ></div>
               </div>
-              <span className="text-xs text-slate-500 mt-2 rotate-45 origin-left md:rotate-0 md:origin-center">{item.label}</span>
+              <span className="text-[10px] text-slate-400 mt-4 font-bold uppercase tracking-widest">{item.label}</span>
             </div>
           );
         })}
@@ -48,18 +48,18 @@ const SimpleBarChart = ({ data, title }) => {
 };
 
 const StatCard = ({ title, value, icon: Icon, trend, trendValue }) => (
-  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-start justify-between">
-    <div>
-      <p className="text-sm font-medium text-slate-500 mb-1">{title}</p>
-      <h4 className="text-2xl font-bold text-slate-800">{value}</h4>
+  <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-start justify-between group hover:border-blue-300 transition-all">
+    <div className="space-y-3">
+      <p className="text-xs font-black text-slate-400 uppercase tracking-widest">{title}</p>
+      <h4 className="text-3xl font-black text-slate-900 tracking-tight">{value}</h4>
       {trend && (
-        <div className={`flex items-center mt-2 text-sm ${trend === 'up' ? 'text-emerald-500' : 'text-red-500'}`}>
+        <div className={`flex items-center text-sm font-bold ${trend === 'up' ? 'text-emerald-500' : 'text-rose-500'}`}>
           <TrendingUp className={`w-4 h-4 mr-1 ${trend === 'down' ? 'rotate-180' : ''}`} />
-          <span>{trendValue} oproti min. mesiacu</span>
+          <span>{trendValue}</span>
         </div>
       )}
     </div>
-    <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
+    <div className="p-4 bg-slate-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-all shadow-inner">
       <Icon className="w-6 h-6" />
     </div>
   </div>
@@ -110,22 +110,21 @@ export default function App() {
     };
   };
 
-  // Funkcia pre načítanie reálnych dát z Flowii API (cez našu novú serverless funkciu)
+  // Funkcia pre načítanie reálnych dát z Flowii API cez tvoj Vercel proxy
   const fetchFlowiiData = async (key) => {
-    if (!key) return;
+    if (!key || key === 'demo-key') {
+      setLoading(true);
+      setTimeout(() => {
+        setDashboardData(generateMockData());
+        setLoading(false);
+        if (key === 'demo-key') setApiKey('');
+      }, 600);
+      return;
+    }
     
     setLoading(true);
     setError(null);
 
-    // Ak ide o demo kľúč, rovno nahráme mock dáta
-    if (key === 'demo-key') {
-      setTimeout(() => {
-        setDashboardData(generateMockData());
-        setLoading(false);
-      }, 500);
-      return;
-    }
-    
     try {
       const headers = {
         'Authorization': `Bearer ${key}`,
@@ -133,46 +132,47 @@ export default function App() {
         'Accept': 'application/json'
       };
 
-      // Využívame našu novú vlastnú Vercel Serverless funkciu zo zložky /api/
-      // URL vyzerá takto: /api/proxy?endpoint=partners
-      
+      // Volanie tvojho proxy endpointu /api/proxy.js
       const [partnersRes, invoicesRes, dealsRes] = await Promise.all([
         fetch(`/api/proxy?endpoint=partners`, { headers }),
         fetch(`/api/proxy?endpoint=invoices`, { headers }),
         fetch(`/api/proxy?endpoint=opportunities`, { headers })
       ]);
 
-      if (!partnersRes.ok || !invoicesRes.ok || !dealsRes.ok) {
-        throw new Error(`Chyba API. Skontrolujte prosím, či je váš API kľúč platný a či máte práva.`);
-      }
-
       const partners = await partnersRes.json();
       const invoices = await invoicesRes.json();
       const deals = await dealsRes.json();
 
-      // Flowii štandardne ukladá zoznamy do poľa "data"
+      // Kontrola chýb z proxy alebo Flowii
+      if (partners.error || invoices.error || deals.error) {
+        const errorMsgs = [
+          partners.error && `Partneri: ${partners.message}`,
+          invoices.error && `Faktúry: ${invoices.message}`,
+          deals.error && `Obchody: ${deals.message}`
+        ].filter(Boolean).join(' | ');
+        throw new Error(errorMsgs || 'Flowii API zamietlo prístup.');
+      }
+
       const partnersList = partners.data || [];
       const invoicesList = invoices.data || [];
       const dealsList = deals.data || [];
 
-      // Spočítanie reálnych tržieb (z faktúr)
+      // Spočítanie reálnych metrík
       const totalRevenue = invoicesList.reduce((acc, inv) => acc + (parseFloat(inv.totalPrice) || 0), 0);
-      // Spočítanie neuhradených faktúr
       const unpaid = invoicesList.filter(inv => inv.paymentStatus !== 'paid').length;
 
       setDashboardData({
-        revenue: totalRevenue || generateMockData().revenue, // fallback ak sú dáta prázdne
-        activePartners: partnersList.length || generateMockData().activePartners,
-        openDeals: dealsList.length || generateMockData().openDeals,
-        unpaidInvoices: unpaid || generateMockData().unpaidInvoices,
-        monthlyRevenue: generateMockData().monthlyRevenue, // Tieto dáta zatiaľ používajú mock
-        monthlyDeals: generateMockData().monthlyDeals      
+        revenue: totalRevenue || 0,
+        activePartners: partnersList.length || 0,
+        openDeals: dealsList.length || 0,
+        unpaidInvoices: unpaid || 0,
+        monthlyRevenue: generateMockData().monthlyRevenue, // Dočasné mock dáta pre grafy
+        monthlyDeals: generateMockData().monthlyDeals      // Dočasné mock dáta pre grafy
       });
       
     } catch (err) {
-      console.error(err);
-      setError(err.message || 'Nastala neznáma chyba pri komunikácii so serverom.');
-      // Ak nastane chyba, ukážeme aspoň demo dáta, aby neostala prázdna obrazovka
+      console.error('Chyba synchronizácie:', err);
+      setError(err.message || 'Nepodarilo sa pripojiť k Flowii. Skontrolujte kľúč.');
       setDashboardData(generateMockData());
     } finally {
       setLoading(false);
@@ -180,14 +180,13 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Načítanie demo dát pri prvom štarte
-    fetchFlowiiData('demo-key');
+    fetchFlowiiData(apiKey);
   }, []);
 
   const handleSaveSettings = (e) => {
     e.preventDefault();
     setShowSettings(false);
-    fetchFlowiiData(apiKey || 'demo-key');
+    fetchFlowiiData(apiKey);
   };
 
   const menuItems = [
@@ -200,166 +199,132 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-800">
       
-      {/* SIDEBAR (Desktop) */}
-      <aside className={`fixed inset-y-0 left-0 bg-slate-900 text-slate-300 w-64 transform transition-transform duration-300 ease-in-out z-20 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:static md:block`}>
-        <div className="p-6 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-white">
-            <BarChart3 className="w-8 h-8 text-blue-500" />
-            <span className="text-xl font-bold tracking-wide">Flowii<span className="font-light">Stats</span></span>
+      {/* SIDEBAR */}
+      <aside className={`fixed inset-y-0 left-0 bg-slate-900 text-slate-300 w-72 transform transition-transform duration-500 ease-in-out z-40 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:static md:block border-r border-slate-800 shadow-2xl`}>
+        <div className="p-8 flex items-center justify-between">
+          <div className="flex items-center gap-3 text-white">
+            <div className="p-2.5 bg-blue-600 rounded-2xl shadow-lg shadow-blue-500/20">
+              <BarChart3 className="w-6 h-6" />
+            </div>
+            <span className="text-2xl font-black tracking-tighter uppercase italic">Flowii<span className="text-blue-500 not-italic">Stats</span></span>
           </div>
           <button className="md:hidden text-slate-400 hover:text-white" onClick={() => setMobileMenuOpen(false)}>
             <X className="w-6 h-6" />
           </button>
         </div>
 
-        <nav className="mt-6 px-4 space-y-1">
+        <nav className="mt-8 px-6 space-y-2">
           {menuItems.map(item => (
             <button
               key={item.id}
               onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl transition-all group ${
                 activeTab === item.id 
-                  ? 'bg-blue-600/10 text-blue-400' 
-                  : 'hover:bg-slate-800 hover:text-white'
+                  ? 'bg-blue-600 text-white shadow-xl shadow-blue-900/40 translate-x-1' 
+                  : 'hover:bg-slate-800 hover:text-white text-slate-400'
               }`}
             >
-              <item.icon className="w-5 h-5" />
-              <span className="font-medium">{item.label}</span>
+              <item.icon className={`w-5 h-5 transition-transform group-hover:scale-110 ${activeTab === item.id ? 'text-white' : 'text-slate-500'}`} />
+              <span className="font-bold tracking-tight">{item.label}</span>
             </button>
           ))}
         </nav>
 
-        <div className="absolute bottom-0 w-full p-4">
+        <div className="absolute bottom-10 w-full px-6">
           <button 
             onClick={() => { setShowSettings(true); setMobileMenuOpen(false); }}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 transition-colors"
+            className="w-full flex items-center gap-4 px-6 py-4 rounded-2xl bg-slate-800/40 hover:bg-slate-800 transition-colors text-slate-300 border border-slate-700/50"
           >
-            <Settings className="w-5 h-5" />
-            <span>Nastavenia API</span>
+            <Settings className="w-5 h-5 text-slate-500" />
+            <span className="font-bold text-sm tracking-wide">Nastavenia API</span>
           </button>
         </div>
       </aside>
 
-      {/* OVERLAY PRE MOBILNÉ MENU */}
+      {/* OVERLAY */}
       {mobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-10 md:hidden" 
-          onClick={() => setMobileMenuOpen(false)}
-        />
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-30 md:hidden" onClick={() => setMobileMenuOpen(false)} />
       )}
 
       {/* HLAVNÝ OBSAH */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         
-        {/* Top Header */}
-        <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-6 shrink-0">
+        {/* HEADER */}
+        <header className="bg-white border-b border-slate-100 h-20 flex items-center justify-between px-8 shrink-0">
           <div className="flex items-center gap-4">
-            <button className="md:hidden text-slate-600" onClick={() => setMobileMenuOpen(true)}>
+            <button className="md:hidden p-2.5 bg-slate-50 rounded-xl text-slate-600 shadow-sm border border-slate-100" onClick={() => setMobileMenuOpen(true)}>
               <Menu className="w-6 h-6" />
             </button>
-            <h1 className="text-xl font-semibold capitalize text-slate-800">
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">
               {menuItems.find(i => i.id === activeTab)?.label || 'Prehľad'}
             </h1>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
             {!apiKey && (
-              <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium border border-amber-200">
-                <AlertCircle className="w-3.5 h-3.5" />
-                Ukážkové dáta
-              </span>
+              <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-50 text-amber-700 text-[11px] font-black border border-amber-100 animate-pulse tracking-widest uppercase">
+                <AlertCircle className="w-4 h-4" />
+                Demo Režim
+              </div>
             )}
-            {apiKey && (
-               <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium border border-emerald-200">
-               <CheckCircle2 className="w-3.5 h-3.5" />
-               API Pripojené
-             </span>
+            {apiKey && !error && (
+              <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-[11px] font-black border border-emerald-100 tracking-widest uppercase">
+                <CheckCircle2 className="w-4 h-4" />
+                Dáta synchronizované
+              </div>
             )}
-            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
+            <div className="w-11 h-11 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center text-blue-600 font-black shadow-sm text-lg">
               TJ
             </div>
           </div>
         </header>
 
-        {/* Scrollable Content */}
-        <div className="flex-1 overflow-auto p-6 md:p-8">
+        {/* SCROLLBOX */}
+        <div className="flex-1 overflow-auto p-8 lg:p-12 space-y-12">
           
           {error && (
-            <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-md flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
+            <div className="bg-rose-50 border-l-4 border-rose-500 p-6 rounded-r-3xl flex items-start gap-6 shadow-sm animate-in slide-in-from-top-4 duration-500">
+              <div className="p-3 bg-rose-100 rounded-2xl">
+                <AlertCircle className="w-6 h-6 text-rose-600" />
+              </div>
               <div>
-                <h3 className="text-red-800 font-medium">Chyba pri načítaní dát</h3>
-                <p className="text-red-600 text-sm mt-1">{error}</p>
+                <h3 className="text-rose-900 font-black text-lg">Chyba pripojenia</h3>
+                <p className="text-rose-700 text-sm mt-1 font-semibold leading-relaxed">{error}</p>
               </div>
             </div>
           )}
 
           {loading ? (
-            <div className="flex flex-col items-center justify-center h-full space-y-4">
-              <div className="w-12 h-12 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin"></div>
-              <p className="text-slate-500">Načítavam dáta z Flowii...</p>
+            <div className="flex flex-col items-center justify-center h-full space-y-6">
+              <div className="w-16 h-16 border-[6px] border-slate-100 border-t-blue-600 rounded-full animate-spin shadow-inner"></div>
+              <p className="text-slate-400 font-black uppercase tracking-widest text-sm animate-pulse">Sťahujem Flowii dáta...</p>
             </div>
           ) : (
-            <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
+            <div className="max-w-7xl mx-auto space-y-12 animate-in fade-in duration-700">
               
               {activeTab === 'dashboard' && (
                 <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <StatCard 
-                      title="Celkové tržby (vybrané obdobie)" 
-                      value={`${dashboardData.revenue.toLocaleString('sk-SK')} €`} 
-                      icon={DollarSign}
-                      trend="up"
-                      trendValue="+12%"
-                    />
-                    <StatCard 
-                      title="Aktívni partneri" 
-                      value={dashboardData.activePartners} 
-                      icon={Users}
-                      trend="up"
-                      trendValue="+3%"
-                    />
-                    <StatCard 
-                      title="Otvorené obchody" 
-                      value={dashboardData.openDeals} 
-                      icon={Briefcase}
-                      trend="down"
-                      trendValue="-2%"
-                    />
-                    <StatCard 
-                      title="Nezaplatené faktúry" 
-                      value={dashboardData.unpaidInvoices} 
-                      icon={FileText}
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                    <StatCard title="Celkové tržby" value={`${dashboardData.revenue.toLocaleString('sk-SK')} €`} icon={DollarSign} trend="up" trendValue="+12.5%" />
+                    <StatCard title="Partneri" value={dashboardData.activePartners} icon={Users} trend="up" trendValue="+24" />
+                    <StatCard title="Otvorené obchody" value={dashboardData.openDeals} icon={Briefcase} trend="down" trendValue="-3" />
+                    <StatCard title="Nezaplatené faktúry" value={dashboardData.unpaidInvoices} icon={FileText} />
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="h-80">
-                      <SimpleBarChart 
-                        title="Vývoj tržieb (Faktúry)" 
-                        data={dashboardData.monthlyRevenue} 
-                      />
-                    </div>
-                    <div className="h-80">
-                      <SimpleBarChart 
-                        title="Nové obchodné príležitosti" 
-                        data={dashboardData.monthlyDeals} 
-                      />
-                    </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                    <div className="h-[450px]"><SimpleBarChart title="Trend tržieb (Faktúry)" data={dashboardData.monthlyRevenue} /></div>
+                    <div className="h-[450px]"><SimpleBarChart title="Obchodné príležitosti" data={dashboardData.monthlyDeals} /></div>
                   </div>
                 </>
               )}
 
               {activeTab !== 'dashboard' && (
-                <div className="bg-white rounded-xl border border-slate-200 p-12 text-center flex flex-col items-center justify-center">
-                  <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-                    <LayoutDashboard className="w-10 h-10 text-slate-400" />
+                <div className="bg-white rounded-[40px] border border-slate-100 p-24 text-center space-y-8 shadow-sm">
+                  <div className="w-24 h-24 bg-slate-50 rounded-3xl flex items-center justify-center text-slate-200 mx-auto border-2 border-dashed border-slate-100">
+                    <LayoutDashboard className="w-12 h-12" />
                   </div>
-                  <h2 className="text-2xl font-bold text-slate-800 mb-2">Sekcia {menuItems.find(i => i.id === activeTab)?.label}</h2>
-                  <p className="text-slate-500 max-w-md">
-                    Táto sekcia bude obsahovať detailné tabuľky a špecifické grafy pre danú agendu z Flowii.
-                    Zatiaľ je prístupný hlavný prehľad.
-                  </p>
+                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">Sekcia {menuItems.find(i => i.id === activeTab)?.label}</h2>
+                  <p className="text-slate-400 max-w-sm mx-auto font-bold leading-relaxed text-lg">Tu sa čoskoro zobrazia podrobné tabuľky pre túto sekciu.</p>
                 </div>
               )}
             </div>
@@ -367,55 +332,38 @@ export default function App() {
         </div>
       </main>
 
-      {/* SETTINGS MODAL */}
+      {/* NASTAVENIA */}
       {showSettings && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-800">Nastavenie Flowii API</h3>
-              <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleSaveSettings} className="p-6">
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="apiKey" className="block text-sm font-medium text-slate-700 mb-1">
-                    API Kľúč
-                  </label>
-                  <input
-                    type="password"
-                    id="apiKey"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="Vložte váš Flowii API kľúč"
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                  />
-                  <p className="text-xs text-slate-500 mt-2">
-                    Kľúč zostáva bezpečne uložený vo vašom prehliadači a komunikuje cez Vercel server.
-                  </p>
-                </div>
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-6 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg overflow-hidden p-12 space-y-12 animate-in zoom-in-95 duration-300">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight">Nastavenia API</h3>
+                <p className="text-slate-400 font-bold text-sm mt-1">Prepojte dashboard so svojím Flowii</p>
               </div>
-              <div className="mt-8 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowSettings(false)}
-                  className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-                >
-                  Zrušiť
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
-                >
-                  Uložiť a načítať dáta
-                </button>
+              <button onClick={() => setShowSettings(false)} className="p-3.5 hover:bg-slate-50 rounded-2xl border border-slate-100 transition-all"><X className="w-6 h-6 text-slate-400" /></button>
+            </div>
+            
+            <form onSubmit={handleSaveSettings} className="space-y-10">
+              <div className="space-y-5">
+                <label className="block text-xs font-black text-slate-700 uppercase tracking-widest">Flowii API Token</label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="Vložte váš tajný token..."
+                  className="w-full px-7 py-5 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-8 focus:ring-blue-50 focus:border-blue-500 outline-none transition-all placeholder:text-slate-300 font-mono text-sm shadow-inner"
+                />
+              </div>
+              
+              <div className="flex flex-col gap-4 pt-4">
+                <button type="submit" className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition-all shadow-2xl shadow-blue-600/30 active:scale-[0.96] uppercase tracking-widest text-xs">Uložiť a Synchronizovať</button>
+                <button type="button" onClick={() => fetchFlowiiData('demo-key')} className="w-full py-3 text-sm font-black text-slate-400 hover:text-slate-700 transition-colors uppercase tracking-widest text-center">Pokračovať v Demo režime</button>
               </div>
             </form>
           </div>
         </div>
       )}
-
     </div>
-  );
-}
+      );
+};
