@@ -1,56 +1,34 @@
 export default async function handler(req, res) {
-  // Povolenie CORS hlavičiek pre komunikáciu s frontendom
-  res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
-  );
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-  // Ošetrenie OPTIONS požiadavky (pre-flight)
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const targetEndpoint = req.query.endpoint;
+  const { endpoint } = req.query;
+  if (!endpoint) return res.status(400).json({ error: 'Missing endpoint' });
 
-  if (!targetEndpoint) {
-    return res.status(400).json({ error: 'Chýba parameter endpoint' });
-  }
-
-  // Cieľová adresa Flowii API
-  const flowiiUrl = `https://api.flowii.com/api/v1/${targetEndpoint}`;
-
+  const url = `https://api.flowii.com/api/v1/${endpoint}`;
+  
   try {
-    const authHeader = req.headers.authorization;
-
-    // Volanie Flowii servera zo server-side prostredia (obchádza CORS)
-    const flowiiResponse = await fetch(flowiiUrl, {
-      method: req.method,
+    const response = await fetch(url, {
+      method: 'GET',
       headers: {
-        'Authorization': authHeader,
+        'Authorization': req.headers.authorization || '',
         'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
+        'Content-Type': 'application/json'
+      }
     });
 
-    const data = await flowiiResponse.json();
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { data = { raw: text }; }
 
-    // Ak Flowii vráti chybu (401, 403 atď.), vrátime ju s podrobnosťami
-    if (!flowiiResponse.ok) {
-       return res.status(flowiiResponse.status).json({
-           error: true,
-           message: data.message || `Flowii zamietlo prístup k ${targetEndpoint}.`
-       });
-    }
-
-    // Vrátenie úspešných dát späť do aplikácie
-    res.status(200).json(data);
-
+    return res.status(response.status).json(data);
   } catch (error) {
-    console.error('Chyba proxy servera:', error);
-    res.status(500).json({ error: 'Interná chyba servera pri komunikácii s Flowii' });
+    return res.status(500).json({ 
+      error: 'Proxy Error', 
+      message: error.message 
+    });
   }
 }
