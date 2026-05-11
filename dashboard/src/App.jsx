@@ -117,17 +117,27 @@ export default function App() {
     };
   };
 
-  // Helper pre správne poskladanie URL (Fix pre lomítka)
+  /**
+   * Helper pre správne poskladanie URL.
+   * Ak používame skript proxy.js, pridá ?endpoint=
+   * Ak používame Vercel rewrite, pridá /
+   */
   const getEndpointUrl = (baseUrl, endpoint) => {
     let base = baseUrl.trim();
+
+    // Ak ide o proxy skript (/api/proxy), musíme použiť query parameter
+    if (base.endsWith('/api/proxy') || base === 'api/proxy') {
+      return `${base}?endpoint=${endpoint}`;
+    }
+
+    // Ošetrenie pre Vercel rewrite (/api/flowii) alebo manuálne zadané URL
     if (base.endsWith('/')) {
-        base = base.slice(0, -1);
+      base = base.slice(0, -1);
     }
     
     if (base.includes('?endpoint=')) {
       return `${base}${endpoint}`;
     } else {
-      // Tu vynútime lomítko pre Vercel rewrite: /api/flowii/partners
       return `${base}/${endpoint}`; 
     }
   };
