@@ -20,7 +20,9 @@ import {
   Bug,
   Globe,
   Lock,
-  Terminal
+  Terminal,
+  Copy,
+  Check
 } from 'lucide-react';
 
 // --- KOMPONENTY PRE GRAFY ---
@@ -282,12 +284,14 @@ export default function App() {
       <main className="flex-1 flex flex-col h-screen overflow-hidden text-left">
         
         <header className="bg-white border-b border-slate-100 h-20 flex items-center justify-between px-8 shrink-0 text-center">
-          <button className="md:hidden p-2.5 bg-slate-50 rounded-xl" onClick={() => setMobileMenuOpen(true)}><Menu /></button>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight text-left">{menuItems.find(i => i.id === activeTab)?.label}</h1>
+          <div className="flex items-center gap-4">
+            <button className="md:hidden p-2.5 bg-slate-50 rounded-xl" onClick={() => setMobileMenuOpen(true)}><Menu /></button>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight text-left">{menuItems.find(i => i.id === activeTab)?.label}</h1>
+          </div>
           
           <div className="flex items-center gap-6">
             {!apiKey ? (
-              <div className="px-4 py-2 rounded-xl bg-amber-50 text-amber-700 text-[11px] font-black border border-amber-100">KONFIGURÁCIA</div>
+              <div className="px-4 py-2 rounded-xl bg-amber-50 text-amber-700 text-[11px] font-black border border-amber-100 uppercase">Konfigurácia</div>
             ) : (
               <div className="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-[11px] font-black border border-emerald-100 tracking-widest uppercase">Live</div>
             )}
@@ -300,7 +304,7 @@ export default function App() {
         <div className="flex-1 overflow-auto p-8 lg:p-12 space-y-12">
           
           {error && (
-            <div className="bg-rose-50 border-l-4 border-rose-500 p-6 rounded-r-3xl flex items-start gap-6 shadow-sm text-left">
+            <div className="bg-rose-50 border-l-4 border-rose-500 p-6 rounded-r-3xl flex items-start gap-6 shadow-sm text-left animate-in slide-in-from-top duration-300">
               <AlertCircle className="w-6 h-6 text-rose-600 shrink-0" />
               <div className="text-left">
                 <h3 className="text-rose-900 font-black text-lg">Chyba synchronizácie</h3>
@@ -333,7 +337,7 @@ export default function App() {
                   <div className="relative z-10 text-left">
                     <h2 className="text-3xl font-black mb-4 tracking-tight text-white">Debugger Pripojenia</h2>
                     <p className="text-slate-400 font-medium leading-relaxed mb-8 max-w-2xl text-left">
-                      Ak váš Proxy server vracia <b>Chybu 500</b>, problém je pravdepodobne v kóde <code>proxy.js</code>. Skúste zmeniť metódu alebo otestujte existenciu endpointu.
+                      Tento nástroj nám pomôže opraviť <b>Chybu 500</b> alebo <b>404</b>. Vyberte metódu, zadajte endpoint a otestujte.
                     </p>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-left">
@@ -393,13 +397,72 @@ export default function App() {
                         </div>
                         <div className="text-left">
                           <h3 className="text-xl font-bold">Analýza Odpovede</h3>
-                          <p className="text-slate-400 text-sm font-medium">Požiadavka odoslaná o {discoveryResult.timestamp}</p>
+                          <p className="text-slate-400 text-sm font-medium">Zavolané o {discoveryResult.timestamp}</p>
                         </div>
                       </div>
                       <div className={`px-5 py-2 rounded-full font-black text-xs uppercase tracking-widest ${discoveryResult.success ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                         STAV: {discoveryResult.status}
                       </div>
                     </div>
+
+                    {discoveryResult.status === 500 && (
+                      <div className="mb-10 bg-rose-50 border-2 border-rose-100 rounded-[2rem] overflow-hidden">
+                        <div className="p-8 space-y-6">
+                           <div className="flex gap-4 items-start">
+                              <Terminal className="w-8 h-8 text-rose-600 shrink-0" />
+                              <div>
+                                 <h4 className="text-rose-900 font-black text-xl mb-2">Záchranný plán pre Chybu 500</h4>
+                                 <p className="text-rose-700 text-sm leading-relaxed mb-4">
+                                    Váš Proxy Server spadol. Nahraďte obsah súboru <code>api/proxy.js</code> týmto novým kódom, ktorý je odolnejší a nevyžaduje inštaláciu balíčkov:
+                                 </p>
+                              </div>
+                           </div>
+                           <div className="relative group">
+                              <div className="bg-slate-900 rounded-2xl p-6 overflow-hidden">
+                                 <pre className="text-blue-300 text-[10px] font-mono leading-relaxed overflow-auto max-h-[300px]">
+{`export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  const { endpoint } = req.query;
+  if (!endpoint) return res.status(400).json({ error: 'Missing endpoint' });
+
+  const url = \`https://api.flowii.com/api/v1/\${endpoint}\`;
+  
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': req.headers.authorization || '',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { data = { raw: text }; }
+
+    return res.status(response.status).json(data);
+  } catch (error) {
+    return res.status(500).json({ 
+      error: 'Proxy Error', 
+      message: error.message 
+    });
+  }
+}`}
+                                 </pre>
+                              </div>
+                              <p className="mt-4 text-[11px] text-rose-600 font-bold bg-white/50 p-2 rounded-lg text-center">
+                                 💡 Tip: Ak používate Vercel, uistite sa, že v nastaveniach projektu máte Node.js verziu 18 alebo novšiu.
+                              </p>
+                           </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8 text-left">
                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-left">
@@ -412,25 +475,11 @@ export default function App() {
                        </div>
                     </div>
 
-                    {discoveryResult.status === 500 && (
-                      <div className="mb-8 p-6 bg-rose-50 border border-rose-100 rounded-3xl text-left">
-                        <div className="flex gap-4 items-start text-left">
-                          <Terminal className="w-6 h-6 text-rose-600 shrink-0" />
-                          <div className="text-left">
-                            <h4 className="text-rose-900 font-bold mb-1 text-left">Diagnostika Chyby 500</h4>
-                            <p className="text-rose-700 text-xs leading-relaxed text-left">
-                              Váš <b>Proxy Server zlyhal</b> ešte predtým, než dostal dáta od Flowii. Skontrolujte súbor <code>api/proxy.js</code>. Najčastejšie chýba knižnica <code>node-fetch</code> (ak používate staršiu verziu Node.js) alebo je problém v URL adrese Flowii.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
                     <div className="space-y-4 text-left">
                       <div className="flex items-center gap-2 text-slate-400 text-xs font-black uppercase tracking-tighter text-left">
                         <Code className="w-4 h-4 text-slate-400" /> JSON / RAW Odpoveď
                       </div>
-                      <div className="bg-slate-900 rounded-3xl p-8 overflow-hidden shadow-2xl text-left">
+                      <div className="bg-slate-900 rounded-3xl p-8 overflow-hidden shadow-2xl text-left border border-slate-800">
                         <pre className="text-emerald-400 text-[11px] font-mono overflow-auto max-h-[500px] leading-relaxed text-left">
                           {JSON.stringify(discoveryResult.payload, null, 2)}
                         </pre>
@@ -445,7 +494,7 @@ export default function App() {
               <div className="bg-white rounded-[40px] border border-slate-100 p-24 text-center space-y-8 shadow-sm">
                  <LayoutDashboard className="w-12 h-12 text-slate-200 mx-auto" />
                  <h2 className="text-3xl font-black text-slate-900 tracking-tight text-center text-slate-900">Sekcia {menuItems.find(i => i.id === activeTab)?.label}</h2>
-                 <p className="text-slate-400 max-w-sm mx-auto font-bold leading-relaxed text-lg text-center">Tabuľky sa zobrazia po úspešnom prepojení v Debuggeri.</p>
+                 <p className="text-slate-400 max-w-sm mx-auto font-bold leading-relaxed text-lg text-center">Tabuľky sa automaticky vygenerujú hneď, ako v Debuggeri uvidíme zelený status 200.</p>
               </div>
             )}
           </div>
@@ -459,7 +508,7 @@ export default function App() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-2xl font-black text-slate-900 tracking-tight text-slate-900 text-left">Nastavenia API</h3>
-                <p className="text-slate-400 font-bold text-sm mt-1 text-left">Vložte váš tajný token</p>
+                <p className="text-slate-400 font-bold text-sm mt-1 text-left">Prepojte dashboard so svojím Flowii</p>
               </div>
               <button onClick={() => setShowSettings(false)} className="p-3.5 hover:bg-slate-50 rounded-2xl border border-slate-100 text-center"><X className="text-slate-400" /></button>
             </div>
@@ -471,7 +520,7 @@ export default function App() {
                   type="password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Vložte váš kľúč..."
+                  placeholder="Vložte váš tajný kľúč..."
                   className="w-full px-7 py-5 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-8 focus:ring-blue-50 focus:border-blue-500 outline-none transition-all font-mono shadow-inner text-slate-900"
                 />
               </div>
