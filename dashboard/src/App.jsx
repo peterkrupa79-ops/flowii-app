@@ -19,7 +19,8 @@ import {
   RefreshCw,
   Bug,
   Globe,
-  Lock
+  Lock,
+  Terminal
 } from 'lucide-react';
 
 // --- KOMPONENTY PRE GRAFY ---
@@ -119,27 +120,16 @@ export default function App() {
 
   /**
    * Helper pre správne poskladanie URL.
-   * Ak používame skript proxy.js, pridá ?endpoint=
-   * Ak používame Vercel rewrite, pridá /
    */
   const getEndpointUrl = (baseUrl, endpoint) => {
     let base = baseUrl.trim();
-
-    // Ak ide o proxy skript (/api/proxy), musíme použiť query parameter
     if (base.endsWith('/api/proxy') || base === 'api/proxy') {
       return `${base}?endpoint=${endpoint}`;
     }
-
-    // Ošetrenie pre Vercel rewrite (/api/flowii) alebo manuálne zadané URL
     if (base.endsWith('/')) {
       base = base.slice(0, -1);
     }
-    
-    if (base.includes('?endpoint=')) {
-      return `${base}${endpoint}`;
-    } else {
-      return `${base}/${endpoint}`; 
-    }
+    return base.includes('?endpoint=') ? `${base}${endpoint}` : `${base}/${endpoint}`;
   };
 
   const runDiscovery = async () => {
@@ -161,19 +151,21 @@ export default function App() {
       });
       
       const status = response.status;
+      const contentType = response.headers.get("content-type");
       const text = await response.text();
       let payload;
       
       try {
         payload = JSON.parse(text);
       } catch (e) {
-        payload = { rawResponse: text };
+        payload = { rawResponse: text, parseError: "Odpoveď nie je platný JSON" };
       }
 
       setDiscoveryResult({
         status,
         success: response.ok,
         payload: payload,
+        contentType: contentType,
         timestamp: new Date().toLocaleTimeString(),
         attemptedUrl: targetUrl,
         attemptedAuth: `${authPrefix}***`
@@ -204,7 +196,7 @@ export default function App() {
         const url = getEndpointUrl(proxyUrl, endpoint);
         const res = await fetch(url, { headers });
         const result = await res.json();
-        if (!res.ok) throw new Error(`${endpoint}: ${result.message || res.status}`);
+        if (!res.ok) throw new Error(`${endpoint}: ${result.message || result.error || res.status}`);
         return result;
       };
 
@@ -251,19 +243,18 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-800">
       
-      {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 bg-slate-900 text-slate-300 w-72 transform transition-transform duration-500 ease-in-out z-40 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:static md:block border-r border-slate-800 shadow-2xl`}>
         <div className="p-8 flex items-center justify-between">
           <div className="flex items-center gap-3 text-white">
             <div className="p-2.5 bg-blue-600 rounded-2xl shadow-lg shadow-blue-500/20">
               <BarChart3 className="w-6 h-6" />
             </div>
-            <span className="text-2xl font-black tracking-tighter uppercase italic">FlowiiStats</span>
+            <span className="text-2xl font-black tracking-tighter uppercase italic text-white">FlowiiStats</span>
           </div>
           <button className="md:hidden text-slate-400" onClick={() => setMobileMenuOpen(false)}><X /></button>
         </div>
 
-        <nav className="mt-8 px-6 space-y-2">
+        <nav className="mt-8 px-6 space-y-2 text-left">
           {menuItems.map(item => (
             <button
               key={item.id}
@@ -275,7 +266,7 @@ export default function App() {
               }`}
             >
               <item.icon className="w-5 h-5" />
-              <span className="font-bold tracking-tight">{item.label}</span>
+              <span className="font-bold tracking-tight text-left">{item.label}</span>
             </button>
           ))}
         </nav>
@@ -288,12 +279,11 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main Area */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+      <main className="flex-1 flex flex-col h-screen overflow-hidden text-left">
         
         <header className="bg-white border-b border-slate-100 h-20 flex items-center justify-between px-8 shrink-0 text-center">
           <button className="md:hidden p-2.5 bg-slate-50 rounded-xl" onClick={() => setMobileMenuOpen(true)}><Menu /></button>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">{menuItems.find(i => i.id === activeTab)?.label}</h1>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight text-left">{menuItems.find(i => i.id === activeTab)?.label}</h1>
           
           <div className="flex items-center gap-6">
             {!apiKey ? (
@@ -310,7 +300,7 @@ export default function App() {
         <div className="flex-1 overflow-auto p-8 lg:p-12 space-y-12">
           
           {error && (
-            <div className="bg-rose-50 border-l-4 border-rose-500 p-6 rounded-r-3xl flex items-start gap-6 shadow-sm">
+            <div className="bg-rose-50 border-l-4 border-rose-500 p-6 rounded-r-3xl flex items-start gap-6 shadow-sm text-left">
               <AlertCircle className="w-6 h-6 text-rose-600 shrink-0" />
               <div className="text-left">
                 <h3 className="text-rose-900 font-black text-lg">Chyba synchronizácie</h3>
@@ -319,10 +309,10 @@ export default function App() {
             </div>
           )}
 
-          <div className="max-w-7xl mx-auto animate-in fade-in duration-700">
+          <div className="max-w-7xl mx-auto animate-in fade-in duration-700 text-left">
             
             {activeTab === 'dashboard' && (
-              <div className="space-y-12">
+              <div className="space-y-12 text-left">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
                   <StatCard title="Celkové tržby" value={`${dashboardData.revenue.toLocaleString('sk-SK')} €`} icon={DollarSign} />
                   <StatCard title="Partneri" value={dashboardData.activePartners} icon={Users} />
@@ -330,25 +320,25 @@ export default function App() {
                   <StatCard title="Nezaplatené" value={dashboardData.unpaidInvoices} icon={FileText} />
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 text-center">
-                  <div className="h-[450px]"><SimpleBarChart title="Mesačné tržby" data={dashboardData.monthlyRevenue} /></div>
-                  <div className="h-[450px]"><SimpleBarChart title="Počet obchodov" data={dashboardData.monthlyDeals} /></div>
+                  <div className="h-[450px] text-center"><SimpleBarChart title="Mesačné tržby" data={dashboardData.monthlyRevenue} /></div>
+                  <div className="h-[450px] text-center"><SimpleBarChart title="Počet obchodov" data={dashboardData.monthlyDeals} /></div>
                 </div>
               </div>
             )}
 
             {activeTab === 'discovery' && (
-              <div className="space-y-8">
+              <div className="space-y-8 text-left">
                 <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden text-left">
-                  <div className="absolute top-0 right-0 p-12 opacity-10"><Search className="w-32 h-32" /></div>
-                  <div className="relative z-10">
-                    <h2 className="text-3xl font-black mb-4 tracking-tight">Debugger Pripojenia</h2>
+                  <div className="absolute top-0 right-0 p-12 opacity-10"><Search className="w-32 h-32 text-white" /></div>
+                  <div className="relative z-10 text-left">
+                    <h2 className="text-3xl font-black mb-4 tracking-tight text-white">Debugger Pripojenia</h2>
                     <p className="text-slate-400 font-medium leading-relaxed mb-8 max-w-2xl text-left">
-                      Testovanie prelomilo lomítka a cesty. Vyberte metódu a otestujte endpoint.
+                      Ak váš Proxy server vracia <b>Chybu 500</b>, problém je pravdepodobne v kóde <code>proxy.js</code>. Skúste zmeniť metódu alebo otestujte existenciu endpointu.
                     </p>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-left">
                       <div className="space-y-2 text-left">
-                        <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2"><Globe className="w-3 h-3"/> Proxy Metóda</label>
+                        <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2"><Globe className="w-3 h-3 text-slate-500"/> Proxy Metóda</label>
                         <select 
                            value={proxyUrl} 
                            onChange={(e) => setProxyUrl(e.target.value)}
@@ -359,7 +349,7 @@ export default function App() {
                         </select>
                       </div>
                       <div className="space-y-2 text-left">
-                        <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2"><Lock className="w-3 h-3"/> Formát kľúča</label>
+                        <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2"><Lock className="w-3 h-3 text-slate-500"/> Formát kľúča</label>
                         <select 
                            value={authPrefix} 
                            onChange={(e) => setAuthPrefix(e.target.value)}
@@ -379,7 +369,7 @@ export default function App() {
                           value={discoveryEndpoint}
                           onChange={(e) => setDiscoveryEndpoint(e.target.value.toLowerCase())}
                           className="w-full bg-slate-800 border-2 border-slate-700 rounded-2xl py-4 pl-20 pr-4 outline-none focus:border-blue-500 transition-all font-bold text-white shadow-inner"
-                          placeholder="názov endpointu..."
+                          placeholder="názov endpointu (napr. partners)..."
                         />
                       </div>
                       <button 
@@ -402,8 +392,8 @@ export default function App() {
                           <Database className="w-6 h-6" />
                         </div>
                         <div className="text-left">
-                          <h3 className="text-xl font-bold">Výsledok testu</h3>
-                          <p className="text-slate-400 text-sm font-medium">Zavolané o {discoveryResult.timestamp}</p>
+                          <h3 className="text-xl font-bold">Analýza Odpovede</h3>
+                          <p className="text-slate-400 text-sm font-medium">Požiadavka odoslaná o {discoveryResult.timestamp}</p>
                         </div>
                       </div>
                       <div className={`px-5 py-2 rounded-full font-black text-xs uppercase tracking-widest ${discoveryResult.success ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
@@ -413,18 +403,32 @@ export default function App() {
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8 text-left">
                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-left">
-                          <p className="text-[10px] font-black uppercase text-slate-400 mb-1 text-left">Zavolaná URL</p>
-                          <p className="text-xs font-mono break-all text-left">{discoveryResult.attemptedUrl}</p>
+                          <p className="text-[10px] font-black uppercase text-slate-400 mb-1 text-left">Použitá URL</p>
+                          <p className="text-xs font-mono break-all text-left text-slate-600">{discoveryResult.attemptedUrl}</p>
                        </div>
                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-left">
-                          <p className="text-[10px] font-black uppercase text-slate-400 mb-1 text-left">Použitý Prefix</p>
-                          <p className="text-xs font-mono text-left">{discoveryResult.attemptedAuth}</p>
+                          <p className="text-[10px] font-black uppercase text-slate-400 mb-1 text-left">Typ obsahu (Header)</p>
+                          <p className="text-xs font-mono text-left text-slate-600">{discoveryResult.contentType || "Neznámy"}</p>
                        </div>
                     </div>
 
+                    {discoveryResult.status === 500 && (
+                      <div className="mb-8 p-6 bg-rose-50 border border-rose-100 rounded-3xl text-left">
+                        <div className="flex gap-4 items-start text-left">
+                          <Terminal className="w-6 h-6 text-rose-600 shrink-0" />
+                          <div className="text-left">
+                            <h4 className="text-rose-900 font-bold mb-1 text-left">Diagnostika Chyby 500</h4>
+                            <p className="text-rose-700 text-xs leading-relaxed text-left">
+                              Váš <b>Proxy Server zlyhal</b> ešte predtým, než dostal dáta od Flowii. Skontrolujte súbor <code>api/proxy.js</code>. Najčastejšie chýba knižnica <code>node-fetch</code> (ak používate staršiu verziu Node.js) alebo je problém v URL adrese Flowii.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-4 text-left">
                       <div className="flex items-center gap-2 text-slate-400 text-xs font-black uppercase tracking-tighter text-left">
-                        <Code className="w-4 h-4 text-left" /> JSON Odpoveď
+                        <Code className="w-4 h-4 text-slate-400" /> JSON / RAW Odpoveď
                       </div>
                       <div className="bg-slate-900 rounded-3xl p-8 overflow-hidden shadow-2xl text-left">
                         <pre className="text-emerald-400 text-[11px] font-mono overflow-auto max-h-[500px] leading-relaxed text-left">
@@ -440,8 +444,8 @@ export default function App() {
             {(activeTab === 'invoices' || activeTab === 'partners') && (
               <div className="bg-white rounded-[40px] border border-slate-100 p-24 text-center space-y-8 shadow-sm">
                  <LayoutDashboard className="w-12 h-12 text-slate-200 mx-auto" />
-                 <h2 className="text-3xl font-black text-slate-900 tracking-tight text-center">Sekcia {menuItems.find(i => i.id === activeTab)?.label}</h2>
-                 <p className="text-slate-400 max-w-sm mx-auto font-bold leading-relaxed text-lg text-center">Dáta sú pripravené, čakáme na úspešné overenie pripojenia.</p>
+                 <h2 className="text-3xl font-black text-slate-900 tracking-tight text-center text-slate-900">Sekcia {menuItems.find(i => i.id === activeTab)?.label}</h2>
+                 <p className="text-slate-400 max-w-sm mx-auto font-bold leading-relaxed text-lg text-center">Tabuľky sa zobrazia po úspešnom prepojení v Debuggeri.</p>
               </div>
             )}
           </div>
@@ -454,24 +458,24 @@ export default function App() {
           <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg p-10 space-y-10 animate-in zoom-in-95">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-2xl font-black text-slate-900 tracking-tight">Nastavenia API</h3>
-                <p className="text-slate-400 font-bold text-sm mt-1 text-left">Váš Flowii API kľúč</p>
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight text-slate-900 text-left">Nastavenia API</h3>
+                <p className="text-slate-400 font-bold text-sm mt-1 text-left">Vložte váš tajný token</p>
               </div>
-              <button onClick={() => setShowSettings(false)} className="p-3.5 hover:bg-slate-50 rounded-2xl border border-slate-100"><X /></button>
+              <button onClick={() => setShowSettings(false)} className="p-3.5 hover:bg-slate-50 rounded-2xl border border-slate-100 text-center"><X className="text-slate-400" /></button>
             </div>
             
-            <form onSubmit={handleSaveSettings} className="space-y-10">
-              <div className="space-y-5">
+            <form onSubmit={handleSaveSettings} className="space-y-10 text-left">
+              <div className="space-y-5 text-left">
                 <label className="block text-xs font-black text-slate-700 uppercase tracking-widest text-left">Flowii API Token</label>
                 <input
                   type="password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Vložte váš tajný kľúč..."
+                  placeholder="Vložte váš kľúč..."
                   className="w-full px-7 py-5 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-8 focus:ring-blue-50 focus:border-blue-500 outline-none transition-all font-mono shadow-inner text-slate-900"
                 />
               </div>
-              <button type="submit" className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition-all uppercase text-xs tracking-widest shadow-lg active:scale-95">Synchronizovať</button>
+              <button type="submit" className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition-all uppercase text-xs tracking-widest shadow-lg active:scale-95 text-white">Synchronizovať</button>
             </form>
           </div>
         </div>
