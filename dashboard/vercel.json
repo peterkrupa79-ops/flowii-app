@@ -1,8 +1,8 @@
 {
   "rewrites": [
     {
-      "source": "/api/flowii/:path*",
-      "destination": "https://api.flowii.com/api/v1/:path*"
+      "source": "/api/flowii/:match*",
+      "destination": "https://api.flowii.com/api/v1/:match*"
     }
   ]
 }

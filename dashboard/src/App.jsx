@@ -134,26 +134,40 @@ export default function App() {
         'Accept': 'application/json'
       };
 
-      // Helper pre správne poskladanie URL
+      // Helper pre správne poskladanie URL - OPRAVENÝ
       const getEndpointUrl = (endpoint) => {
-        const base = url.trim();
+        let base = url.trim();
+        
+        // Ošetríme, ak má používateľ lomítko na konci
+        if (base.endsWith('/')) {
+            base = base.slice(0, -1);
+        }
+        
+        // Ak ide o PHP proxy s ?endpoint=
         if (base.includes('?endpoint=')) {
           return `${base}${endpoint}`;
         } else {
-          const separator = base.endsWith('/') ? '' : '/';
-          return `${base}${separator}${endpoint}`;
+          // Pre Vercel proxy vynútime presný formát /api/flowii/endpoint
+          return `${base}/${endpoint}`;
         }
       };
 
+      // Zistenie finálnych URL pre lepšie ladenie v konzole prehliadača
+      const partnersUrl = getEndpointUrl('partners');
+      const invoicesUrl = getEndpointUrl('invoices');
+      const dealsUrl = getEndpointUrl('opportunities');
+
+      console.log("Volám API na adresách:", {partnersUrl, invoicesUrl, dealsUrl});
+
       // REALNE VOLANIE
       const [partnersRes, invoicesRes, dealsRes] = await Promise.all([
-        fetch(getEndpointUrl('partners'), { headers }),
-        fetch(getEndpointUrl('invoices'), { headers }),
-        fetch(getEndpointUrl('opportunities'), { headers })
+        fetch(partnersUrl, { headers }),
+        fetch(invoicesUrl, { headers }),
+        fetch(dealsUrl, { headers })
       ]);
 
       if (!partnersRes.ok || !invoicesRes.ok || !dealsRes.ok) {
-        throw new Error(`Chyba API. Zadaný kľúč môže byť neplatný. (Status: ${partnersRes.status})`);
+        throw new Error(`Chyba API. Zadaný kľúč môže byť neplatný alebo adresa je zlá. (Status: ${partnersRes.status})`);
       }
 
       const partners = await partnersRes.json();
