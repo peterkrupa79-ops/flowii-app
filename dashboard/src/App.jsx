@@ -70,7 +70,6 @@ const StatCard = ({ title, value, icon: Icon, trend, trendValue }) => (
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [apiKey, setApiKey] = useState('');
-  const [backendUrl, setBackendUrl] = useState('/api/flowii'); 
   const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -111,8 +110,8 @@ export default function App() {
     };
   };
 
-  // Funkcia pre načítanie reálnych dát z Flowii API
-  const fetchFlowiiData = async (key, url = backendUrl) => {
+  // Funkcia pre načítanie reálnych dát z Flowii API (cez našu novú serverless funkciu)
+  const fetchFlowiiData = async (key) => {
     if (!key) return;
     
     setLoading(true);
@@ -134,70 +133,46 @@ export default function App() {
         'Accept': 'application/json'
       };
 
-      // Helper pre správne poskladanie URL - OPRAVENÝ
-      const getEndpointUrl = (endpoint) => {
-        let base = url.trim();
-        
-        // Ošetríme, ak má používateľ lomítko na konci
-        if (base.endsWith('/')) {
-            base = base.slice(0, -1);
-        }
-        
-        // Ak ide o PHP proxy s ?endpoint=
-        if (base.includes('?endpoint=')) {
-          return `${base}${endpoint}`;
-        } else {
-          // Pre Vercel proxy vynútime presný formát /api/flowii/endpoint
-          return `${base}/${endpoint}`;
-        }
-      };
-
-      // Zistenie finálnych URL pre lepšie ladenie v konzole prehliadača
-      const partnersUrl = getEndpointUrl('partners');
-      const invoicesUrl = getEndpointUrl('invoices');
-      const dealsUrl = getEndpointUrl('opportunities');
-
-      console.log("Volám API na adresách:", {partnersUrl, invoicesUrl, dealsUrl});
-
-      // REALNE VOLANIE
+      // Využívame našu novú vlastnú Vercel Serverless funkciu zo zložky /api/
+      // URL vyzerá takto: /api/proxy?endpoint=partners
+      
       const [partnersRes, invoicesRes, dealsRes] = await Promise.all([
-        fetch(partnersUrl, { headers }),
-        fetch(invoicesUrl, { headers }),
-        fetch(dealsUrl, { headers })
+        fetch(`/api/proxy?endpoint=partners`, { headers }),
+        fetch(`/api/proxy?endpoint=invoices`, { headers }),
+        fetch(`/api/proxy?endpoint=opportunities`, { headers })
       ]);
 
       if (!partnersRes.ok || !invoicesRes.ok || !dealsRes.ok) {
-        throw new Error(`Chyba API. Zadaný kľúč môže byť neplatný alebo adresa je zlá. (Status: ${partnersRes.status})`);
+        throw new Error(`Chyba API. Skontrolujte prosím, či je váš API kľúč platný a či máte práva.`);
       }
 
       const partners = await partnersRes.json();
       const invoices = await invoicesRes.json();
       const deals = await dealsRes.json();
 
+      // Flowii štandardne ukladá zoznamy do poľa "data"
       const partnersList = partners.data || [];
       const invoicesList = invoices.data || [];
       const dealsList = deals.data || [];
 
-      // Spočítanie reálnych tržieb
+      // Spočítanie reálnych tržieb (z faktúr)
       const totalRevenue = invoicesList.reduce((acc, inv) => acc + (parseFloat(inv.totalPrice) || 0), 0);
+      // Spočítanie neuhradených faktúr
       const unpaid = invoicesList.filter(inv => inv.paymentStatus !== 'paid').length;
 
       setDashboardData({
-        revenue: totalRevenue || generateMockData().revenue,
+        revenue: totalRevenue || generateMockData().revenue, // fallback ak sú dáta prázdne
         activePartners: partnersList.length || generateMockData().activePartners,
         openDeals: dealsList.length || generateMockData().openDeals,
         unpaidInvoices: unpaid || generateMockData().unpaidInvoices,
-        monthlyRevenue: generateMockData().monthlyRevenue, // Zatiaľ mock, vyžaduje zložitejší parsing
-        monthlyDeals: generateMockData().monthlyDeals      // Zatiaľ mock, vyžaduje zložitejší parsing
+        monthlyRevenue: generateMockData().monthlyRevenue, // Tieto dáta zatiaľ používajú mock
+        monthlyDeals: generateMockData().monthlyDeals      
       });
       
     } catch (err) {
       console.error(err);
-      if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
-        setError('Prehliadač zablokoval spojenie (CORS ochrana). Pre reálne fungovanie aplikáciu nasaďte na Vercel so súborom vercel.json, alebo použite PHP proxy.');
-      } else {
-        setError(err.message);
-      }
+      setError(err.message || 'Nastala neznáma chyba pri komunikácii so serverom.');
+      // Ak nastane chyba, ukážeme aspoň demo dáta, aby neostala prázdna obrazovka
       setDashboardData(generateMockData());
     } finally {
       setLoading(false);
@@ -205,13 +180,14 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Načítanie demo dát pri prvom štarte
     fetchFlowiiData('demo-key');
   }, []);
 
   const handleSaveSettings = (e) => {
     e.preventDefault();
     setShowSettings(false);
-    fetchFlowiiData(apiKey || 'demo-key', backendUrl);
+    fetchFlowiiData(apiKey || 'demo-key');
   };
 
   const menuItems = [
@@ -415,22 +391,8 @@ export default function App() {
                     placeholder="Vložte váš Flowii API kľúč"
                     className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                   />
-                </div>
-                
-                <div className="pt-2">
-                  <label htmlFor="backendUrl" className="block text-sm font-medium text-slate-700 mb-1">
-                    API Server / Proxy URL
-                  </label>
-                  <input
-                    type="text"
-                    id="backendUrl"
-                    value={backendUrl}
-                    onChange={(e) => setBackendUrl(e.target.value)}
-                    placeholder="/api/flowii"
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm"
-                  />
                   <p className="text-xs text-slate-500 mt-2">
-                    Pre <strong>Vercel</strong> nechaj: <strong>/api/flowii</strong>
+                    Kľúč zostáva bezpečne uložený vo vašom prehliadači a komunikuje cez Vercel server.
                   </p>
                 </div>
               </div>
