@@ -17,7 +17,9 @@ import {
   Send,
   Code,
   RefreshCw,
-  Bug
+  Bug,
+  Globe,
+  Lock
 } from 'lucide-react';
 
 // --- KOMPONENTY PRE GRAFY ---
@@ -26,7 +28,7 @@ const SimpleBarChart = ({ data, title }) => {
   const maxValue = Math.max(...data.map(d => d.value)) || 1;
 
   return (
-    <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col h-full hover:shadow-md transition-shadow">
+    <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col h-full hover:shadow-md transition-shadow text-center">
       <h3 className="text-lg font-bold text-slate-800 mb-6">{title}</h3>
       <div className="flex-1 flex items-end justify-between gap-2 h-48 mt-auto">
         {data.map((item, index) => {
@@ -54,8 +56,8 @@ const SimpleBarChart = ({ data, title }) => {
 const StatCard = ({ title, value, icon: Icon, trend, trendValue }) => (
   <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex items-start justify-between group hover:border-blue-300 transition-all">
     <div className="space-y-3">
-      <p className="text-xs font-black text-slate-400 uppercase tracking-widest">{title}</p>
-      <h4 className="text-3xl font-black text-slate-900 tracking-tight">{value}</h4>
+      <p className="text-xs font-black text-slate-400 uppercase tracking-widest text-left">{title}</p>
+      <h4 className="text-3xl font-black text-slate-900 tracking-tight text-left">{value}</h4>
       {trend && (
         <div className={`flex items-center text-sm font-bold ${trend === 'up' ? 'text-emerald-500' : 'text-rose-500'}`}>
           <TrendingUp className={`w-4 h-4 mr-1 ${trend === 'down' ? 'rotate-180' : ''}`} />
@@ -79,7 +81,11 @@ export default function App() {
   const [error, setError] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Debugger state
+  // --- DEBUG NASTAVENIA (Možnosť meniť za behu) ---
+  const [proxyUrl, setProxyUrl] = useState('/api/proxy');
+  const [authPrefix, setAuthPrefix] = useState('Bearer ');
+
+  // Discovery tool state
   const [discoveryEndpoint, setDiscoveryEndpoint] = useState('partners');
   const [discoveryResult, setDiscoveryResult] = useState(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
@@ -113,7 +119,7 @@ export default function App() {
     };
   };
 
-  // --- API DISCOVERY TOOL (Zisťujeme, čo funguje) ---
+  // --- HLAVNÝ TESTOVACÍ NÁSTROJ ---
   const runDiscovery = async () => {
     if (!apiKey) {
       setError("Najprv vložte API kľúč v nastaveniach.");
@@ -123,21 +129,36 @@ export default function App() {
     setDiscoveryResult(null);
 
     try {
-      const response = await fetch(`/api/proxy?endpoint=${discoveryEndpoint}`, {
+      // Skúsime volať proxy s nastaveným prefixom (Bearer alebo čistý kľúč)
+      const response = await fetch(`${proxyUrl}?endpoint=${discoveryEndpoint}`, {
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `${authPrefix}${apiKey}`,
           'Accept': 'application/json'
         }
       });
+      
       const status = response.status;
-      const data = await response.json();
+      const text = await response.text();
+      let payload;
+      
+      try {
+        payload = JSON.parse(text);
+      } catch (e) {
+        payload = { rawResponse: text };
+      }
 
       setDiscoveryResult({
         status,
         success: response.ok,
-        payload: data,
-        timestamp: new Date().toLocaleTimeString()
+        payload: payload,
+        timestamp: new Date().toLocaleTimeString(),
+        attemptedUrl: `${proxyUrl}?endpoint=${discoveryEndpoint}`,
+        attemptedAuth: `${authPrefix}***`
       });
+
+      if (!response.ok && status === 500) {
+        setError("Proxy server vracia chybu 500. Skúsime zmeniť formát kľúča?");
+      }
     } catch (err) {
       setDiscoveryResult({
         status: 'Network Error',
@@ -156,9 +177,9 @@ export default function App() {
     setError(null);
 
     try {
-      const headers = { 'Authorization': `Bearer ${key}`, 'Accept': 'application/json' };
+      const headers = { 'Authorization': `${authPrefix}${key}`, 'Accept': 'application/json' };
       const fetchRaw = async (endpoint) => {
-        const res = await fetch(`/api/proxy?endpoint=${endpoint}`, { headers });
+        const res = await fetch(`${proxyUrl}?endpoint=${endpoint}`, { headers });
         const result = await res.json();
         if (!res.ok) throw new Error(`${endpoint}: ${result.message || res.status}`);
         return result;
@@ -172,15 +193,13 @@ export default function App() {
 
       setRawData({ partners, invoices, opportunities });
 
-      // Spracovanie pre Dashboard
       const partnersList = partners.data || [];
       const invoicesList = invoices.data || [];
-      const dealsList = opportunities.data || [];
 
       setDashboardData({
         revenue: invoicesList.reduce((acc, inv) => acc + (parseFloat(inv.totalPrice) || 0), 0),
         activePartners: partnersList.length,
-        openDeals: dealsList.length,
+        openDeals: (opportunities.data || []).length,
         unpaidInvoices: invoicesList.filter(inv => inv.paymentStatus !== 'paid').length,
         monthlyRevenue: generateMockData().monthlyRevenue,
         monthlyDeals: generateMockData().monthlyDeals
@@ -201,7 +220,7 @@ export default function App() {
 
   const menuItems = [
     { id: 'dashboard', label: 'Prehľad', icon: LayoutDashboard },
-    { id: 'discovery', label: 'API Discovery', icon: Bug },
+    { id: 'discovery', label: 'API Discovery (Debugger)', icon: Bug },
     { id: 'invoices', label: 'Faktúry', icon: FileText },
     { id: 'partners', label: 'Partneri', icon: Users },
   ];
@@ -216,7 +235,7 @@ export default function App() {
             <div className="p-2.5 bg-blue-600 rounded-2xl">
               <BarChart3 className="w-6 h-6" />
             </div>
-            <span className="text-2xl font-black tracking-tighter uppercase italic">FlowiiStats</span>
+            <span className="text-2xl font-black tracking-tighter uppercase italic">Flowii<span className="text-blue-500 not-italic">Stats</span></span>
           </div>
           <button className="md:hidden text-slate-400" onClick={() => setMobileMenuOpen(false)}><X /></button>
         </div>
@@ -239,7 +258,7 @@ export default function App() {
         </nav>
 
         <div className="absolute bottom-10 w-full px-6">
-          <button onClick={() => setShowSettings(true)} className="w-full flex items-center gap-4 px-6 py-4 rounded-2xl bg-slate-800/40 text-slate-300 border border-slate-700/50">
+          <button onClick={() => setShowSettings(true)} className="w-full flex items-center gap-4 px-6 py-4 rounded-2xl bg-slate-800/40 text-slate-300 border border-slate-700/50 hover:bg-slate-800 transition-colors">
             <Settings className="w-5 h-5" />
             <span className="font-bold text-sm tracking-wide">Nastavenia API</span>
           </button>
@@ -255,11 +274,11 @@ export default function App() {
           
           <div className="flex items-center gap-6">
             {!apiKey ? (
-              <div className="px-4 py-2 rounded-xl bg-amber-50 text-amber-700 text-[11px] font-black border border-amber-100">CHÝBA KĽÚČ</div>
+              <div className="px-4 py-2 rounded-xl bg-amber-50 text-amber-700 text-[11px] font-black border border-amber-100">KONFIGURÁCIA</div>
             ) : (
-              <div className="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-[11px] font-black border border-emerald-100 tracking-widest uppercase">Live</div>
+              <div className="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-[11px] font-black border border-emerald-100 uppercase tracking-widest">Live</div>
             )}
-            <button onClick={() => fetchFlowiiData(apiKey)} className="p-2 bg-slate-100 rounded-xl text-slate-600 hover:bg-blue-50 transition-colors">
+            <button onClick={() => fetchFlowiiData(apiKey)} className="p-2 bg-slate-100 rounded-xl text-slate-600 hover:bg-blue-50 transition-colors shadow-sm">
               <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
@@ -271,8 +290,9 @@ export default function App() {
             <div className="bg-rose-50 border-l-4 border-rose-500 p-6 rounded-r-3xl flex items-start gap-6 shadow-sm">
               <AlertCircle className="w-6 h-6 text-rose-600 shrink-0" />
               <div>
-                <h3 className="text-rose-900 font-black text-lg">Chyba</h3>
+                <h3 className="text-rose-900 font-black text-lg">Chyba synchronizácie</h3>
                 <p className="text-rose-700 text-sm mt-1 font-semibold">{error}</p>
+                <p className="text-slate-400 text-[11px] mt-2 italic">Prejdite do API Discovery a skúste zmeniť formát prefixu alebo adresu proxy.</p>
               </div>
             </div>
           )}
@@ -298,12 +318,37 @@ export default function App() {
               <div className="space-y-8">
                 <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-12 opacity-10"><Search className="w-32 h-32" /></div>
-                  <div className="relative z-10 max-w-2xl">
-                    <h2 className="text-3xl font-black mb-4 tracking-tight">Flowii Endpoint Discovery</h2>
-                    <p className="text-slate-400 font-medium leading-relaxed mb-8">
-                      Zadajte názov modulu nižšie (napr. <code>partners</code>, <code>invoices</code>, <code>users</code>) a zistite, či existuje a čo vraciam. Koniec hádania.
+                  <div className="relative z-10">
+                    <h2 className="text-3xl font-black mb-4 tracking-tight">Debugger Pripojenia</h2>
+                    <p className="text-slate-400 font-medium leading-relaxed mb-8 max-w-2xl">
+                      Ak dostávate chybu 500, skúsme zmeniť parametre požiadavky nižšie.
                     </p>
                     
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2"><Globe className="w-3 h-3"/> Proxy Endpoint</label>
+                        <select 
+                           value={proxyUrl} 
+                           onChange={(e) => setProxyUrl(e.target.value)}
+                           className="w-full bg-slate-800 border-2 border-slate-700 rounded-xl p-3 text-sm font-bold"
+                        >
+                          <option value="/api/proxy">Script: /api/proxy (proxy.js)</option>
+                          <option value="/api/flowii">Rewrite: /api/flowii (vercel.json)</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2"><Lock className="w-3 h-3"/> Formát kľúča (Auth Prefix)</label>
+                        <select 
+                           value={authPrefix} 
+                           onChange={(e) => setAuthPrefix(e.target.value)}
+                           className="w-full bg-slate-800 border-2 border-slate-700 rounded-xl p-3 text-sm font-bold"
+                        >
+                          <option value="Bearer ">Štandard: Bearer [kluc]</option>
+                          <option value="">Čistý kľúč: [kluc]</option>
+                        </select>
+                      </div>
+                    </div>
+
                     <div className="flex flex-col sm:flex-row gap-4">
                       <div className="flex-1 relative">
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-sm tracking-tighter uppercase">api/v1/</span>
@@ -318,7 +363,7 @@ export default function App() {
                       <button 
                         onClick={runDiscovery}
                         disabled={discoveryLoading}
-                        className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-600/30 active:scale-95"
+                        className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-10 py-4 rounded-2xl font-black flex items-center justify-center gap-3 transition-all shadow-lg shadow-blue-600/30 active:scale-95 text-sm uppercase"
                       >
                         {discoveryLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                         Otestovať
@@ -330,23 +375,38 @@ export default function App() {
                 {discoveryResult && (
                   <div className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm animate-in slide-in-from-bottom-4 duration-500">
                     <div className="flex items-center justify-between mb-8">
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-4 text-left">
                         <div className={`p-3 rounded-2xl ${discoveryResult.success ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
                           <Database className="w-6 h-6" />
                         </div>
-                        <div>
+                        <div className="text-left">
                           <h3 className="text-xl font-bold">Výsledok testu</h3>
                           <p className="text-slate-400 text-sm font-medium">Testované o {discoveryResult.timestamp}</p>
                         </div>
                       </div>
                       <div className={`px-5 py-2 rounded-full font-black text-xs uppercase tracking-widest ${discoveryResult.success ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                        HTTP STATUS: {discoveryResult.status}
+                        STAV: {discoveryResult.status}
                       </div>
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8 text-left">
+                       <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                          <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Volaná cesta</p>
+                          <p className="text-xs font-mono break-all">{discoveryResult.attemptedUrl}</p>
+                       </div>
+                       <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                          <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Prefix kľúča</p>
+                          <p className="text-xs font-mono">{discoveryResult.attemptedAuth}</p>
+                       </div>
+                       <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                          <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Identifikácia chyby</p>
+                          <p className="text-xs font-bold text-rose-600">{discoveryResult.status === 500 ? "Zlyhanie Proxy skriptu" : "Odpoveď od Flowii"}</p>
+                       </div>
+                    </div>
+
+                    <div className="space-y-4 text-left">
                       <div className="flex items-center gap-2 text-slate-400 text-xs font-black uppercase tracking-tighter">
-                        <Code className="w-4 h-4" /> Raw JSON Odpoveď
+                        <Code className="w-4 h-4" /> JSON Odpoveď
                       </div>
                       <div className="bg-slate-900 rounded-3xl p-8 overflow-hidden shadow-2xl">
                         <pre className="text-emerald-400 text-[11px] font-mono overflow-auto max-h-[500px] leading-relaxed">
@@ -354,13 +414,6 @@ export default function App() {
                         </pre>
                       </div>
                     </div>
-                    
-                    {!discoveryResult.success && discoveryResult.status === 404 && (
-                      <div className="mt-8 p-6 bg-amber-50 border border-amber-100 rounded-2xl text-amber-800 text-sm font-medium flex gap-4">
-                        <AlertCircle className="w-5 h-5 shrink-0" />
-                        Tento endpoint pravdepodobne neexistuje. Skúste iné množné/jednotné číslo alebo pozrite Flowii dokumentáciu pre presný názov.
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -370,7 +423,7 @@ export default function App() {
               <div className="bg-white rounded-[40px] border border-slate-100 p-24 text-center space-y-8 shadow-sm">
                  <LayoutDashboard className="w-12 h-12 text-slate-200 mx-auto" />
                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">Sekcia {menuItems.find(i => i.id === activeTab)?.label}</h2>
-                 <p className="text-slate-400 max-w-sm mx-auto font-bold leading-relaxed text-lg">Detailné zobrazenie tabuliek pripravíme, hneď ako potvrdíme názvy modulov v Discovery tooli.</p>
+                 <p className="text-slate-400 max-w-sm mx-auto font-bold leading-relaxed text-lg">Detailné zobrazenie tabuliek pripravíme, hneď ako potvrdíme správne nastavenia v Debuggeri.</p>
               </div>
             )}
           </div>
@@ -379,28 +432,28 @@ export default function App() {
 
       {/* Settings Modal */}
       {showSettings && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-6">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-6 animate-in fade-in duration-300">
           <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg p-10 space-y-10 animate-in zoom-in-95">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-2xl font-black text-slate-900 tracking-tight">Nastavenia API</h3>
-                <p className="text-slate-400 font-bold text-sm mt-1">Prepojte dashboard so svojím Flowii</p>
+                <p className="text-slate-400 font-bold text-sm mt-1">Zadajte váš Flowii token</p>
               </div>
-              <button onClick={() => setShowSettings(false)} className="p-3.5 hover:bg-slate-50 rounded-2xl border border-slate-100 text-center text-center"><X /></button>
+              <button onClick={() => setShowSettings(false)} className="p-3.5 hover:bg-slate-50 rounded-2xl border border-slate-100 transition-all"><X /></button>
             </div>
             
             <form onSubmit={handleSaveSettings} className="space-y-10">
               <div className="space-y-5">
-                <label className="block text-xs font-black text-slate-700 uppercase tracking-widest text-center">Flowii API Token</label>
+                <label className="block text-xs font-black text-slate-700 uppercase tracking-widest text-left">Flowii API Token</label>
                 <input
                   type="password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="Vložte tajný kľúč..."
-                  className="w-full px-7 py-5 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-8 focus:ring-blue-50 focus:border-blue-500 outline-none transition-all font-mono"
+                  className="w-full px-7 py-5 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-8 focus:ring-blue-50 focus:border-blue-500 outline-none transition-all font-mono shadow-inner"
                 />
               </div>
-              <button type="submit" className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition-all uppercase text-xs tracking-widest">Spustiť synchronizáciu</button>
+              <button type="submit" className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition-all uppercase text-xs tracking-widest shadow-lg active:scale-95">Spustiť synchronizáciu</button>
             </form>
           </div>
         </div>
