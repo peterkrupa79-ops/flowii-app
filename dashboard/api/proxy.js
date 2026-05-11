@@ -8,7 +8,6 @@ export default async function handler(req, res) {
   const { endpoint } = req.query;
   const { useV1 } = req.body || {};
   
-  // Ak useV1 je true, pridáme v1, inak ideme priamo na api/
   const baseUrl = useV1 ? 'https://api.flowii.com/api/v1/' : 'https://api.flowii.com/api/';
   const url = `${baseUrl}${endpoint}`;
   
@@ -22,9 +21,16 @@ export default async function handler(req, res) {
       }
     });
 
-    const data = await response.json();
+    const text = await response.text();
+    let data;
+    try { 
+      data = JSON.parse(text); 
+    } catch (e) { 
+      data = { raw: text, error: 'Target returned non-JSON' }; 
+    }
+
     return res.status(response.status).json(data);
   } catch (error) {
-    return res.status(500).json({ error: 'Proxy Error', message: error.message });
+    return res.status(500).json({ error: 'Proxy Fatal Error', message: error.message });
   }
 }
