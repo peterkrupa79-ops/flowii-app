@@ -1,24 +1,29 @@
 export default async function handler(req, res) {
+  // Povolenie CORS pre frontend
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-FLOWII-API-KEY');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { endpoint } = req.query;
-  const { useV1 } = req.body || {};
+  const body = req.body || {};
   
-  const baseUrl = useV1 ? 'https://api.flowii.com/api/v1/' : 'https://api.flowii.com/api/';
-  const url = `${baseUrl}${endpoint}`;
+  // Prefix určíme podľa frontendu (api/, api/v1/ alebo prázdny)
+  const prefix = body.prefix !== undefined ? body.prefix : 'api/';
+  const url = `https://api.flowii.com/${prefix}${endpoint}`;
   
   try {
+    // Flowii vyžaduje metódu POST pre zoznamy (index)
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': req.headers.authorization || '',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      }
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      // Do tela požiadavky môžeme neskôr pridať filtre alebo api_key, ak nebude v hlavičke
+      body: JSON.stringify(body.data || {})
     });
 
     const text = await response.text();
@@ -26,11 +31,14 @@ export default async function handler(req, res) {
     try { 
       data = JSON.parse(text); 
     } catch (e) { 
-      data = { raw: text, error: 'Target returned non-JSON' }; 
+      data = { raw: text, error: 'Server nevrátil JSON' }; 
     }
 
     return res.status(response.status).json(data);
   } catch (error) {
-    return res.status(500).json({ error: 'Proxy Fatal Error', message: error.message });
+    return res.status(500).json({ 
+      error: 'Proxy Fatal Error', 
+      message: error.message 
+    });
   }
 }
