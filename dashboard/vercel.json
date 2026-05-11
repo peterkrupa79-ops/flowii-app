@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/flowii/:path*",
+      "destination": "https://api.flowii.com/api/v1/:path*"
+    }
+  ]
+}
