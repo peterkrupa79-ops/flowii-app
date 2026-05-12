@@ -35,16 +35,18 @@ import {
   ClipboardList,
   ZapOff,
   Sparkles,
-  Link
+  Link,
+  Scan,
+  Loader2
 } from 'lucide-react';
 
-// --- KOMPONENTY PRE GRAFY ---
+// --- KOMPONENTY PRE GRAFY (Tailwind CSS) ---
 
 const SimpleBarChart = ({ data, title }) => {
   const maxValue = Math.max(...data.map(d => d.value)) || 1;
   return (
-    <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col h-full hover:shadow-md transition-shadow text-center">
-      <h3 className="text-lg font-bold text-slate-800 mb-6">{title}</h3>
+    <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col h-full hover:shadow-md transition-shadow text-center text-slate-900">
+      <h3 className="text-lg font-bold mb-6">{title}</h3>
       <div className="flex-1 flex items-end justify-between gap-2 h-48 mt-auto text-center">
         {data.map((item, index) => {
           const heightPercent = (item.value / maxValue) * 100;
@@ -96,14 +98,10 @@ export default function App() {
   const [error, setError] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Discovery state (v16 - The Pathmaker)
-  const [urlBase, setUrlBase] = useState('https://api.flowii.com'); 
-  const [urlPrefix, setUrlPrefix] = useState('api/v1/'); 
-  const [discoveryEndpoint, setDiscoveryEndpoint] = useState('partners/index');
-  const [authStyle, setAuthStyle] = useState('Authorization-Bearer');
-  const [httpMethod, setHttpMethod] = useState('POST');
+  // Discovery state (v17 - The Scanner)
   const [discoveryResult, setDiscoveryResult] = useState(null);
-  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState("");
 
   const [dashboardData, setDashboardData] = useState({
     revenue: 0, activePartners: 0, openDeals: 0, unpaidInvoices: 0,
@@ -113,64 +111,75 @@ export default function App() {
   const getCleanApiKey = (key) => key ? key.trim().replace(/[^\x00-\x7F]/g, "") : "";
 
   /**
-   * Run Discovery v16 - Diagnostika presnej cesty
+   * Automatický skener ciest na nájdenie správnej URL kombinácie
    */
-  const runDiscovery = async () => {
+  const runAutoScan = async () => {
     if (!apiKey) {
       setError("Najprv vložte API kľúč v nastaveniach.");
       return;
     }
-    setDiscoveryLoading(true);
-    setDiscoveryResult(null);
-
-    const cleanKey = getCleanApiKey(apiKey);
-    const headers = { 'Content-Type': 'application/json' };
-
-    if (authStyle === 'X-Flowii-Api-Key') headers['X-FLOWII-API-KEY'] = cleanKey;
-    else if (authStyle === 'Api-Key-Plain') headers['Api-Key'] = cleanKey;
-    else if (authStyle === 'Authorization-Bearer') headers['Authorization'] = `Bearer ${cleanKey}`;
-
-    // Vyčistenie a kontrola dvojitého prefixu
-    const sanitizedEndpoint = discoveryEndpoint.replace(/^\/+|\/+$/g, '');
-    const sanitizedPrefix = urlPrefix.replace(/^\/+|\/+$/g, '') + (urlPrefix ? '/' : '');
     
-    try {
-      const response = await fetch(`/api/proxy?endpoint=${sanitizedEndpoint}`, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify({
-          base: urlBase,
-          prefix: sanitizedPrefix,
-          method: httpMethod,
-          data: { apiKey: cleanKey }
-        })
-      });
+    setIsScanning(true);
+    setDiscoveryResult(null);
+    const cleanKey = getCleanApiKey(apiKey);
+    
+    // Zoznam kombinácií na testovanie (vychádza z histórie chýb a dokumentácie)
+    const tests = [
+      { name: "Apiary Standard", prefix: "api/v1/", method: "POST", endpoint: "partners/index", auth: "Authorization-Bearer" },
+      { name: "Legacy POST", prefix: "api/", method: "POST", endpoint: "partners/index", auth: "X-Flowii-Api-Key" },
+      { name: "Direct GET", prefix: "api/v1/", method: "GET", endpoint: "partners", auth: "Authorization-Bearer" },
+      { name: "Pure Key POST", prefix: "api/v1/", method: "POST", endpoint: "partners/index", auth: "Api-Key-Plain" },
+      { name: "No-Prefix POST", prefix: "", method: "POST", endpoint: "partners/index", auth: "X-Flowii-Api-Key" },
+      { name: "Alternative GET", prefix: "api/", method: "GET", endpoint: "partners", auth: "Authorization-Bearer" }
+    ];
+
+    for (let i = 0; i < tests.length; i++) {
+      const t = tests[i];
+      setScanProgress(`Testujem ${i + 1}/${tests.length}: ${t.name}...`);
       
-      const status = response.status;
-      const data = await response.json();
-      const isHtml = data && data.raw && (data.raw.includes('<!DOCTYPE') || data.raw.includes('<html'));
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (t.auth === 'X-Flowii-Api-Key') headers['X-FLOWII-API-KEY'] = cleanKey;
+        else if (t.auth === 'Api-Key-Plain') headers['Api-Key'] = cleanKey;
+        else headers['Authorization'] = `Bearer ${cleanKey}`;
 
-      setDiscoveryResult({
-        status,
-        success: response.ok && !isHtml,
-        payload: data,
-        isHtml: isHtml,
-        timestamp: new Date().toLocaleTimeString(),
-        attemptedFullUrl: `${urlBase}/${sanitizedPrefix}${sanitizedEndpoint}`,
-        methodUsed: httpMethod,
-        authUsed: authStyle,
-        isPathCorrect: sanitizedEndpoint.includes('/index')
-      });
+        const response = await fetch(`/api/proxy?endpoint=${t.endpoint}`, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify({
+            prefix: t.prefix,
+            method: t.method,
+            data: { apiKey: cleanKey }
+          })
+        });
 
-    } catch (err) {
-      setDiscoveryResult({ status: 'Error', success: false, payload: { error: err.message } });
-    } finally {
-      setDiscoveryLoading(false);
+        const data = await response.json();
+        const isHtml = data && data.raw && (data.raw.includes('<!DOCTYPE') || data.raw.includes('<html'));
+
+        if (response.ok && !isHtml) {
+          setDiscoveryResult({
+            status: response.status,
+            success: true,
+            payload: data,
+            config: t,
+            attemptedFullUrl: `https://api.flowii.com/${t.prefix}${t.endpoint}`
+          });
+          setIsScanning(false);
+          return; // Našli sme funkčnú cestu!
+        }
+      } catch (err) {
+        console.error("Krok skenovania zlyhal", err);
+      }
     }
+
+    setScanProgress("Všetky známe cesty zlyhali (404).");
+    setIsScanning(false);
+    setDiscoveryResult({ status: 404, success: false, payload: { error: "Nepodarilo sa nájsť funkčnú kombináciu." } });
   };
 
   const generateMockData = () => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Máj', 'Jún', 'Júl', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
+    const currentMonthIndex = new Date().getMonth();
     const mockRev = months.slice(-6).map(month => ({
       label: month, value: Math.floor(Math.random() * 10000) + 5000
     }));
@@ -228,24 +237,24 @@ export default function App() {
       
       {/* SIDEBAR */}
       <aside className={`fixed inset-y-0 left-0 bg-slate-900 text-slate-300 w-72 transform transition-transform duration-500 ease-in-out z-40 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:static md:block border-r border-slate-800 shadow-2xl text-left`}>
-        <div className="p-8 flex items-center justify-between text-white text-left">
-          <div className="flex items-center gap-3 text-left">
+        <div className="p-8 flex items-center justify-between text-white">
+          <div className="flex items-center gap-3">
             <div className="p-2.5 bg-blue-600 rounded-2xl shadow-lg border border-blue-500/20">
               <BarChart3 className="w-6 h-6" />
             </div>
-            <span className="text-2xl font-black tracking-tighter uppercase italic text-white">FlowiiStats</span>
+            <span className="text-2xl font-black tracking-tighter uppercase italic">FlowiiStats</span>
           </div>
           <button className="md:hidden text-slate-400" onClick={() => setMobileMenuOpen(false)}><X /></button>
         </div>
 
-        <nav className="mt-8 px-6 space-y-2">
+        <nav className="mt-8 px-6 space-y-2 text-left">
           <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-xl' : 'hover:bg-slate-800 text-slate-400'}`}>
             <LayoutDashboard className="w-5 h-5" />
-            <span className="font-bold tracking-tight text-left">Prehľad</span>
+            <span className="font-bold tracking-tight">Prehľad</span>
           </button>
           <button onClick={() => setActiveTab('discovery')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl transition-all ${activeTab === 'discovery' ? 'bg-blue-600 text-white shadow-xl' : 'hover:bg-slate-800 text-slate-400'}`}>
             <Bug className="w-5 h-5" />
-            <span className="font-bold tracking-tight text-left">Debugger (v16)</span>
+            <span className="font-bold tracking-tight">Debugger (v17)</span>
           </button>
         </nav>
 
@@ -259,19 +268,19 @@ export default function App() {
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden text-left text-slate-900">
         <header className="bg-white border-b border-slate-100 h-20 flex items-center justify-between px-8 shrink-0">
-          <div className="flex items-center gap-4 text-left">
+          <div className="flex items-center gap-4">
             <button className="md:hidden p-2.5 bg-slate-50 rounded-xl text-slate-600" onClick={() => setMobileMenuOpen(true)}><Menu /></button>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight text-left">{activeTab === 'dashboard' ? 'Dashboard' : 'IIS Path Discovery'}</h1>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">{activeTab === 'dashboard' ? 'Dashboard' : 'Auto-Scan Discovery'}</h1>
           </div>
           <button onClick={() => fetchFlowiiData(apiKey)} className="p-2 bg-slate-100 rounded-xl text-slate-600 hover:bg-blue-50 transition-colors shadow-sm">
             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </header>
 
-        <div className="flex-1 overflow-auto p-8 lg:p-12 space-y-12 text-left">
+        <div className="flex-1 overflow-auto p-8 lg:p-12 space-y-12">
           {activeTab === 'dashboard' ? (
             <div className="max-w-7xl mx-auto space-y-12 animate-in fade-in duration-700 text-left">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 text-left">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
                 <StatCard title="Celkové tržby" value={`${dashboardData.revenue.toLocaleString('sk-SK')} €`} icon={DollarSign} />
                 <StatCard title="Partneri" value={dashboardData.activePartners} icon={Users} />
                 <StatCard title="Otvorené faktúry" value={dashboardData.unpaidInvoices} icon={FileText} />
@@ -285,111 +294,96 @@ export default function App() {
           ) : (
             <div className="max-w-5xl mx-auto space-y-8 animate-in slide-in-from-bottom duration-500 text-left">
               
-              {/* MAGICKÁ OPRAVA HEADER */}
-              <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden text-left border-4 border-white">
-                <div className="absolute top-0 right-0 p-12 opacity-10"><Sparkles className="w-32 h-32 text-white" /></div>
-                <div className="relative z-10 text-left">
-                  <h2 className="text-3xl font-black mb-4 tracking-tight text-white text-left">The Pathmaker v16</h2>
-                  <p className="text-blue-100 font-bold leading-relaxed mb-8 max-w-2xl text-left">
-                    Vaša požiadavka skončila 404 na <b>/api/v1/partners</b>. Problém je v tom, že pri IIS serveroch <b>musíte</b> pridať <b>/index</b> a použiť metódu <b>POST</b>.
+              {/* SCANNER HEADER */}
+              <div className="bg-gradient-to-br from-indigo-600 to-blue-700 rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden text-left border-4 border-white">
+                <div className="absolute top-0 right-0 p-12 opacity-10"><Scan className="w-32 h-32 text-white" /></div>
+                <div className="relative z-10">
+                  <h2 className="text-3xl font-black mb-4 tracking-tight text-white">The Scanner v17</h2>
+                  <p className="text-indigo-50 font-bold leading-relaxed mb-8 max-w-2xl text-left">
+                    Prestaneme hádať. Skener automaticky otestuje všetky známe cesty k dátam Flowii. Stačí stlačiť tlačidlo.
                   </p>
                   
-                  <div className="flex flex-wrap gap-3 text-left">
+                  <div className="flex flex-col gap-4 text-left">
                      <button 
-                       onClick={() => { setDiscoveryEndpoint('partners/index'); setHttpMethod('POST'); setUrlPrefix('api/v1/'); setAuthStyle('X-Flowii-Api-Key'); }}
-                       className="px-6 py-4 bg-white text-blue-700 rounded-2xl text-sm font-black hover:scale-105 transition-all flex items-center gap-3 shadow-2xl text-left"
+                       onClick={runAutoScan}
+                       disabled={isScanning}
+                       className="w-full sm:w-auto px-8 py-5 bg-white text-indigo-700 rounded-3xl text-sm font-black hover:scale-105 transition-all flex items-center justify-center gap-3 shadow-2xl disabled:opacity-50"
                      >
-                        <Sparkles className="w-5 h-5 text-amber-500 animate-pulse"/> MAGICKÁ OPRAVA (Skúsiť!)
+                        {isScanning ? <Loader2 className="w-6 h-6 animate-spin" /> : <Scan className="w-6 h-6" />}
+                        {isScanning ? "SKENUJEM FLOWII API..." : "SPUSTIŤ AUTOMATICKÝ SKENER"}
                      </button>
-                     <button 
-                       onClick={() => { setDiscoveryEndpoint('partners/index'); setHttpMethod('POST'); setUrlPrefix(''); setAuthStyle('X-Flowii-Api-Key'); }}
-                       className="px-5 py-4 bg-blue-500 text-white border-2 border-blue-400 rounded-2xl text-xs font-black hover:bg-blue-400 transition-all flex items-center gap-2"
-                     >
-                        <Link className="w-4 h-4"/> Skúsiť bez Prefixu
-                     </button>
+                     {isScanning && (
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse text-indigo-200">
+                           {scanProgress}
+                        </p>
+                     )}
                   </div>
                 </div>
-              </div>
-
-              {/* RUČNÉ OVLÁDANIE */}
-              <div className="bg-white rounded-[2.5rem] p-10 border border-slate-200 shadow-sm text-left">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 text-left">
-                  <div className="space-y-2 text-left">
-                    <label className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-2 text-left"><Globe className="w-3 h-3"/> Prefix</label>
-                    <select value={urlPrefix} onChange={(e) => setUrlPrefix(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-[11px] font-bold outline-none focus:border-blue-500 text-left">
-                      <option value="api/v1/">api/v1/</option>
-                      <option value="api/">api/</option>
-                      <option value="">žiadny prefix</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2 text-left">
-                    <label className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-2 text-left text-left"><Fingerprint className="w-3 h-3"/> Hlavička</label>
-                    <select value={authStyle} onChange={(e) => setAuthStyle(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-[11px] font-bold outline-none focus:border-blue-500 text-left text-left">
-                      <option value="X-Flowii-Api-Key">X-FLOWII-API-KEY</option>
-                      <option value="Api-Key-Plain">Api-Key</option>
-                      <option value="Authorization-Bearer">Auth: Bearer</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2 text-left">
-                    <label className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-2 text-left text-left text-left"><Activity className="w-3 h-3"/> Metóda</label>
-                    <select value={httpMethod} onChange={(e) => setHttpMethod(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-[11px] font-bold outline-none focus:border-blue-500 text-left text-left text-left">
-                      <option value="POST">POST</option>
-                      <option value="GET">GET</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2 text-left">
-                    <label className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-2 text-left text-left text-left text-left"><Layers className="w-3 h-3"/> Endpoint</label>
-                    <input type="text" value={discoveryEndpoint} onChange={(e) => setDiscoveryEndpoint(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-[11px] font-bold outline-none focus:border-blue-500 text-left text-left text-left text-left" />
-                  </div>
-                </div>
-
-                <button 
-                  onClick={runDiscovery} disabled={discoveryLoading}
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 py-5 rounded-2xl font-black flex items-center justify-center gap-3 shadow-lg active:scale-95 text-white uppercase text-xs tracking-widest text-left text-left"
-                >
-                  {discoveryLoading ? <RefreshCw className="w-5 h-5 animate-spin text-white" /> : <Zap className="w-5 h-5 text-white" />}
-                  SPUSTIŤ PREPÍSANÝ TEST
-                </button>
               </div>
 
               {discoveryResult && (
-                <div className="bg-white rounded-[2.5rem] border border-slate-200 p-10 shadow-sm text-left">
-                  <div className="flex items-center justify-between mb-8 text-left text-left">
-                    <div className="flex items-center gap-4 text-left text-left text-left text-left">
+                <div className="bg-white rounded-[2.5rem] border border-slate-200 p-10 shadow-sm text-left animate-in zoom-in-95">
+                  <div className="flex items-center justify-between mb-8 text-left">
+                    <div className="flex items-center gap-4">
                       <div className={`p-4 rounded-2xl ${discoveryResult.success ? 'bg-emerald-500 text-white shadow-emerald-200 shadow-lg' : 'bg-rose-500 text-white shadow-rose-200 shadow-lg'}`}><Database className="w-6 h-6" /></div>
-                      <div className="text-left text-left text-left text-left text-left text-left">
-                        <h3 className="text-xl font-bold text-slate-900 text-left text-left text-left text-left text-left">Status Diagnostiky</h3>
-                        <p className="text-slate-400 text-xs font-mono text-left text-left text-left text-left text-left text-left">{discoveryResult.attemptedFullUrl}</p>
+                      <div className="text-left">
+                        <h3 className="text-xl font-bold text-slate-900">Výsledok Skenera</h3>
+                        <p className="text-slate-400 text-xs font-mono">{discoveryResult.success ? "ADRESA NÁJDENÁ!" : "NIČ NEFUNGUJE"}</p>
                       </div>
                     </div>
                     <div className={`px-6 py-2 rounded-full font-black text-xs uppercase tracking-widest ${discoveryResult.success ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>STATUS: {discoveryResult.status}</div>
                   </div>
 
-                  {!discoveryResult.isPathCorrect && discoveryResult.status === 404 && (
-                    <div className="mb-8 p-6 bg-amber-50 border border-amber-100 rounded-3xl flex gap-5 items-start text-left">
-                        <ShieldAlert className="w-8 h-8 text-amber-500 shrink-0" />
-                        <div className="text-left text-left">
-                            <h4 className="text-amber-900 font-bold mb-1 text-left text-left">Kritická chyba v ceste</h4>
-                            <p className="text-amber-700 text-xs leading-relaxed text-left text-left">
-                                Zabudli ste pridať <b>/index</b> na koniec endpointu. Bez toho IIS server Flowii vráti 404. Kliknite na bielu kartu <b>"MAGICKÁ OPRAVA"</b> vyššie.
-                            </p>
-                        </div>
+                  {discoveryResult.success ? (
+                    <div className="mb-8 p-8 bg-emerald-50 border-2 border-emerald-100 rounded-[2rem] text-left text-slate-900">
+                       <div className="flex items-start gap-4 mb-6">
+                          <CheckCircle2 className="w-8 h-8 text-emerald-600 shrink-0" />
+                          <div className="text-left">
+                             <h4 className="text-emerald-900 font-black text-xl mb-1">Máme víťaza!</h4>
+                             <p className="text-emerald-700 text-sm font-bold">Zistil som, že váš Flowii server akceptuje tieto nastavenia:</p>
+                          </div>
+                       </div>
+                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-left">
+                          <div className="p-4 bg-white rounded-2xl border border-emerald-100">
+                             <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Prefix</p>
+                             <p className="text-xs font-bold text-slate-900">{discoveryResult.config.prefix || "(žiadny)"}</p>
+                          </div>
+                          <div className="p-4 bg-white rounded-2xl border border-emerald-100">
+                             <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Metóda</p>
+                             <p className="text-xs font-bold text-slate-900">{discoveryResult.config.method}</p>
+                          </div>
+                          <div className="p-4 bg-white rounded-2xl border border-emerald-100">
+                             <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Hlavička</p>
+                             <p className="text-xs font-bold text-slate-900">{discoveryResult.config.auth}</p>
+                          </div>
+                          <div className="p-4 bg-white rounded-2xl border border-emerald-100">
+                             <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Cesta</p>
+                             <p className="text-xs font-bold text-slate-900">{discoveryResult.config.endpoint}</p>
+                          </div>
+                       </div>
+                    </div>
+                  ) : (
+                    <div className="mb-8 p-8 bg-rose-50 border-2 border-rose-100 rounded-[2rem] text-left text-slate-900">
+                       <div className="flex items-start gap-4">
+                          <ShieldAlert className="w-8 h-8 text-rose-600 shrink-0" />
+                          <div className="text-left">
+                             <h4 className="text-rose-900 font-black text-xl mb-1">SKENER ZLYHAL</h4>
+                             <p className="text-rose-700 text-sm font-bold leading-relaxed">
+                                Vyskúšal som 6 najbežnejších ciest a všetky vrátili 404 alebo iné odmietnutie. 
+                                Skontrolujte, prosím, v nastaveniach Flowii (Správa firmy {`→`} API), či máte kľúč 
+                                povolený pre moduly "Partneri" a "Faktúry".
+                             </p>
+                          </div>
+                       </div>
                     </div>
                   )}
 
-                  <div className="space-y-4 text-left text-left text-left text-left">
-                    <div className="flex items-center gap-2 text-slate-400 text-xs font-black uppercase tracking-tighter text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left"><Code className="w-4 h-4 text-left text-left text-left text-left text-left text-left text-left" /> Raw Output</div>
-                    <div className="bg-slate-900 rounded-3xl p-8 overflow-hidden shadow-2xl border border-slate-800 text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-                      {discoveryResult.isHtml ? (
-                         <div className="space-y-4 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-                            <div className="flex items-center gap-2 text-rose-400 text-[10px] font-bold uppercase text-left text-left text-left text-left text-left text-left text-left text-left text-left"><Info className="w-3 h-3 text-left" /> HTML 404 - Server túto adresu nepozná</div>
-                            <div className="text-slate-500 text-[10px] font-mono break-all opacity-50 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">{discoveryResult.payload?.raw}</div>
-                         </div>
-                      ) : (
-                        <pre className="text-emerald-400 text-[11px] font-mono overflow-auto max-h-[500px] leading-relaxed text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
+                  <div className="space-y-4 text-left">
+                    <div className="flex items-center gap-2 text-slate-400 text-xs font-black uppercase tracking-tighter"><Code className="w-4 h-4" /> Posledná odpoveď</div>
+                    <div className="bg-slate-900 rounded-3xl p-8 overflow-hidden shadow-2xl border border-slate-800 text-left">
+                        <pre className="text-emerald-400 text-[11px] font-mono overflow-auto max-h-[400px] leading-relaxed">
                           {JSON.stringify(discoveryResult.payload, null, 2)}
                         </pre>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -402,21 +396,21 @@ export default function App() {
       {/* SETTINGS */}
       {showSettings && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-6 animate-in fade-in duration-300">
-          <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg p-10 space-y-10 animate-in zoom-in-95 text-left text-left text-left text-left text-left text-left text-left text-left">
-            <div className="flex items-center justify-between text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-              <h3 className="text-2xl font-black text-slate-900 tracking-tight text-left text-left text-left text-left">Nastavenia API</h3>
-              <button onClick={() => setShowSettings(false)} className="p-3.5 hover:bg-slate-50 rounded-2xl border border-slate-100 text-slate-400 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left"><X className="text-left text-slate-400" /></button>
+          <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg p-10 space-y-10 animate-in zoom-in-95 text-left text-slate-900">
+            <div className="flex items-center justify-between">
+              <h3 className="text-2xl font-black text-slate-900 tracking-tight">Nastavenia API</h3>
+              <button onClick={() => setShowSettings(false)} className="p-3.5 hover:bg-slate-50 rounded-2xl border border-slate-100 text-slate-400"><X className="text-left text-slate-400" /></button>
             </div>
-            <form onSubmit={handleSaveSettings} className="space-y-10 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-              <div className="space-y-5 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">
-                <label className="block text-xs font-black text-slate-700 uppercase tracking-widest text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">Flowii API Token</label>
+            <form onSubmit={handleSaveSettings} className="space-y-10">
+              <div className="space-y-5">
+                <label className="block text-xs font-black text-slate-700 uppercase tracking-widest">Flowii API Token</label>
                 <input
                   type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
                   placeholder="Vložte váš tajný kľúč..."
-                  className="w-full px-7 py-5 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-8 focus:ring-blue-50 focus:border-blue-500 outline-none transition-all font-mono shadow-inner text-slate-900 text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left"
+                  className="w-full px-7 py-5 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:ring-8 focus:ring-blue-50 focus:border-blue-500 outline-none transition-all font-mono shadow-inner text-slate-900"
                 />
               </div>
-              <button type="submit" className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition-all uppercase text-xs tracking-widest shadow-lg active:scale-95 text-white text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left text-left">Uložiť a Synchronizovať</button>
+              <button type="submit" className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition-all uppercase text-xs tracking-widest shadow-lg active:scale-95 text-white">Synchronizovať</button>
             </form>
           </div>
         </div>
