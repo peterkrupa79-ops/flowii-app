@@ -28,7 +28,8 @@ import {
   Key,
   Info,
   Activity,
-  ArrowRight
+  ArrowRight,
+  ShieldAlert
 } from 'lucide-react';
 
 // --- KOMPONENTY PRE GRAFY ---
@@ -89,10 +90,11 @@ export default function App() {
   const [error, setError] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Discovery state (v10)
+  // Discovery state (v11)
   const [urlPrefix, setUrlPrefix] = useState('api/v1/'); 
   const [discoveryEndpoint, setDiscoveryEndpoint] = useState('partners/index');
-  const [authStyle, setAuthStyle] = useState('X-Flowii-Api-Key'); // Najpravdepodobnejší úspešný štýl
+  const [authStyle, setAuthStyle] = useState('X-Flowii-Api-Key');
+  const [httpMethod, setHttpMethod] = useState('POST');
   const [discoveryResult, setDiscoveryResult] = useState(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
 
@@ -104,7 +106,7 @@ export default function App() {
   const getCleanApiKey = (key) => key ? key.trim().replace(/[^\x00-\x7F]/g, "") : "";
 
   /**
-   * Run Discovery v10 - Hĺbková diagnostika 404 chyby
+   * Run Discovery v11 - Ultra Diagnostic
    */
   const runDiscovery = async () => {
     if (!apiKey) {
@@ -117,22 +119,22 @@ export default function App() {
     const cleanKey = getCleanApiKey(apiKey);
     const headers = { 'Content-Type': 'application/json' };
 
-    // Nastavenie hlavičky podľa výberu (IIS server je na toto veľmi citlivý)
-    if (authStyle === 'X-Flowii-Api-Key') {
-        headers['X-FLOWII-API-KEY'] = cleanKey;
-    } else if (authStyle === 'Api-Key-Plain') {
-        headers['Api-Key'] = cleanKey;
-    } else if (authStyle === 'Authorization-Bearer') {
-        headers['Authorization'] = `Bearer ${cleanKey}`;
-    }
+    if (authStyle === 'X-Flowii-Api-Key') headers['X-FLOWII-API-KEY'] = cleanKey;
+    else if (authStyle === 'Api-Key-Plain') headers['Api-Key'] = cleanKey;
+    else if (authStyle === 'Authorization-Bearer') headers['Authorization'] = `Bearer ${cleanKey}`;
 
+    // Vyčistenie URL od možných dvojitých lomítok
+    const sanitizedEndpoint = discoveryEndpoint.startsWith('/') ? discoveryEndpoint.substring(1) : discoveryEndpoint;
+    const sanitizedPrefix = urlPrefix.endsWith('/') ? urlPrefix : `${urlPrefix}/`;
+    
     try {
-      const response = await fetch(`/api/proxy?endpoint=${discoveryEndpoint}`, {
-        method: 'POST',
+      const response = await fetch(`/api/proxy?endpoint=${sanitizedEndpoint}`, {
+        method: 'POST', // Proxy vždy prijíma POST, aby mohlo preposlať nastavenia
         headers: headers,
         body: JSON.stringify({
-          prefix: urlPrefix,
-          data: { apiKey: cleanKey } // Pre istotu aj do tela
+          prefix: sanitizedPrefix,
+          method: httpMethod, // Toto povie proxy serveru, akú metódu má použiť voči Flowii
+          data: { apiKey: cleanKey }
         })
       });
       
@@ -146,7 +148,8 @@ export default function App() {
         payload: data,
         isHtml: isHtml,
         timestamp: new Date().toLocaleTimeString(),
-        attemptedFullUrl: `https://api.flowii.com/${urlPrefix}${discoveryEndpoint}`,
+        attemptedFullUrl: `https://api.flowii.com/${sanitizedPrefix}${sanitizedEndpoint}`,
+        methodUsed: httpMethod,
         authUsed: authStyle
       });
 
@@ -233,7 +236,7 @@ export default function App() {
           </button>
           <button onClick={() => setActiveTab('discovery')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl transition-all ${activeTab === 'discovery' ? 'bg-blue-600 text-white shadow-xl' : 'hover:bg-slate-800 text-slate-400'}`}>
             <Bug className="w-5 h-5" />
-            <span className="font-bold tracking-tight">Debugger (v10)</span>
+            <span className="font-bold tracking-tight">Debugger (v11)</span>
           </button>
         </nav>
 
@@ -271,45 +274,58 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div className="max-w-4xl mx-auto space-y-8 animate-in slide-in-from-bottom duration-500 text-left">
+            <div className="max-w-5xl mx-auto space-y-8 animate-in slide-in-from-bottom duration-500 text-left">
               <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden text-left">
                 <div className="absolute top-0 right-0 p-12 opacity-10"><Terminal className="w-32 h-32 text-white" /></div>
                 <div className="relative z-10 text-left">
-                  <h2 className="text-3xl font-black mb-4 tracking-tight text-white text-left">The Final Discovery (v10)</h2>
-                  <p className="text-slate-400 font-medium leading-relaxed mb-8 max-w-xl text-left">
-                    Ak dostávate 404, musíme nájsť presný názov hlavičky, ktorý Flowii server pustí dnu.
+                  <h2 className="text-3xl font-black mb-4 tracking-tight text-white text-left">Ultra Discovery v11</h2>
+                  <p className="text-slate-400 font-medium leading-relaxed mb-8 max-w-2xl text-left">
+                    Ak 404 pretrváva, Flowii server filtruje požiadavky na úrovni firewallu. Skúsme "najľahší" možný endpoint a metódu GET.
                   </p>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 text-left text-left">
+                  <div className="flex flex-wrap gap-3 mb-10 text-left">
+                     <button 
+                       onClick={() => { setDiscoveryEndpoint('user/me'); setHttpMethod('GET'); setUrlPrefix('api/v1/'); }}
+                       className="px-5 py-2.5 bg-emerald-600/20 border border-emerald-500/30 rounded-xl text-xs font-black hover:bg-emerald-600 transition-all flex items-center gap-2"
+                     >
+                        <ShieldCheck className="w-4 h-4"/> 1. Skúsiť "user/me" (GET)
+                     </button>
+                     <button 
+                       onClick={() => { setDiscoveryEndpoint('partners/index'); setHttpMethod('POST'); setUrlPrefix('api/v1/'); }}
+                       className="px-5 py-2.5 bg-blue-600/20 border border-blue-500/30 rounded-xl text-xs font-black hover:bg-blue-600 transition-all flex items-center gap-2"
+                     >
+                        <Layers className="w-4 h-4"/> 2. Skúsiť "partners/index" (POST)
+                     </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 text-left">
                     <div className="space-y-2 text-left">
-                      <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2"><Fingerprint className="w-3 h-3 text-slate-500"/> Názov Hlavičky</label>
-                      <select 
-                         value={authStyle} onChange={(e) => setAuthStyle(e.target.value)}
-                         className="w-full bg-slate-800 border-2 border-slate-700 rounded-xl p-3 text-sm font-bold text-white outline-none focus:border-blue-500 text-left"
-                      >
+                      <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 text-left"><Fingerprint className="w-3 h-3 text-slate-500"/> Hlavička</label>
+                      <select value={authStyle} onChange={(e) => setAuthStyle(e.target.value)} className="w-full bg-slate-800 border-2 border-slate-700 rounded-xl p-3 text-sm font-bold text-white outline-none focus:border-blue-500">
                         <option value="X-Flowii-Api-Key">X-FLOWII-API-KEY</option>
                         <option value="Api-Key-Plain">Api-Key</option>
-                        <option value="Authorization-Bearer">Authorization: Bearer</option>
+                        <option value="Authorization-Bearer">Auth: Bearer</option>
                       </select>
                     </div>
                     <div className="space-y-2 text-left text-left">
-                      <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 text-left"><Globe className="w-3 h-3 text-slate-500"/> URL Prefix</label>
-                      <select 
-                         value={urlPrefix} onChange={(e) => setUrlPrefix(e.target.value)}
-                         className="w-full bg-slate-800 border-2 border-slate-700 rounded-xl p-3 text-sm font-bold text-white outline-none focus:border-blue-500 text-left"
-                      >
+                      <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 text-left"><Globe className="w-3 h-3 text-slate-500"/> Prefix</label>
+                      <select value={urlPrefix} onChange={(e) => setUrlPrefix(e.target.value)} className="w-full bg-slate-800 border-2 border-slate-700 rounded-xl p-3 text-sm font-bold text-white outline-none focus:border-blue-500 text-left">
                         <option value="api/v1/">api/v1/</option>
-                        <option value="api/">api/ (bez v1)</option>
-                        <option value="">žiadny prefix</option>
+                        <option value="api/v2/">api/v2/</option>
+                        <option value="api/">api/</option>
+                        <option value="">žiadny</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2 text-left text-left">
+                      <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 text-left"><Activity className="w-3 h-3 text-slate-500"/> Metóda</label>
+                      <select value={httpMethod} onChange={(e) => setHttpMethod(e.target.value)} className="w-full bg-slate-800 border-2 border-slate-700 rounded-xl p-3 text-sm font-bold text-white outline-none focus:border-blue-500 text-left">
+                        <option value="POST">POST</option>
+                        <option value="GET">GET</option>
                       </select>
                     </div>
                     <div className="space-y-2 text-left text-left">
                       <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2 text-left text-left text-left text-left"><Layers className="w-3 h-3 text-slate-500 text-left"/> Endpoint</label>
-                      <input 
-                        type="text" value={discoveryEndpoint} onChange={(e) => setDiscoveryEndpoint(e.target.value)}
-                        className="w-full bg-slate-800 border-2 border-slate-700 rounded-xl p-3 text-sm font-bold text-white outline-none focus:border-blue-500 text-left"
-                        placeholder="partners/index"
-                      />
+                      <input type="text" value={discoveryEndpoint} onChange={(e) => setDiscoveryEndpoint(e.target.value)} className="w-full bg-slate-800 border-2 border-slate-700 rounded-xl p-3 text-sm font-bold text-white outline-none focus:border-blue-500 text-left" placeholder="partners/index" />
                     </div>
                   </div>
 
@@ -318,7 +334,7 @@ export default function App() {
                     className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 py-4 rounded-2xl font-black flex items-center justify-center gap-3 shadow-lg active:scale-95 text-white uppercase text-xs tracking-widest text-left"
                   >
                     {discoveryLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                    Spustiť Hĺbkovú Diagnostiku
+                    Vykonať Diagnostiku
                   </button>
                 </div>
               </div>
@@ -336,12 +352,25 @@ export default function App() {
                     <div className={`px-5 py-2 rounded-full font-black text-xs uppercase tracking-widest ${discoveryResult.success ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>STATUS: {discoveryResult.status}</div>
                   </div>
 
-                  <div className="space-y-4 text-left text-left">
-                    <div className="flex items-center gap-2 text-slate-400 text-xs font-black uppercase tracking-tighter text-left text-left"><Code className="w-4 h-4 text-left text-left" /> Raw Output zo servera</div>
+                  {discoveryResult.isHtml && (
+                    <div className="mb-8 p-6 bg-rose-50 border border-rose-100 rounded-3xl flex gap-5 items-start">
+                        <ShieldAlert className="w-8 h-8 text-rose-500 shrink-0" />
+                        <div className="text-left">
+                            <h4 className="text-rose-900 font-bold mb-1">Diagnóza: Odmietnutie Firewallom</h4>
+                            <p className="text-rose-700 text-xs leading-relaxed">
+                                Server Flowii túto adresu <code>{discoveryResult.methodUsed} {discoveryResult.attemptedFullUrl}</code> nevidí alebo blokuje. 
+                                Skúste kliknúť na zelené tlačidlo <b>"Skúsiť user/me (GET)"</b>. Ak nepomôže ani to, váš API kľúč nemusí mať povolený prístup cez API modul.
+                            </p>
+                        </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-4 text-left text-left text-left">
+                    <div className="flex items-center gap-2 text-slate-400 text-xs font-black uppercase tracking-tighter text-left text-left"><Code className="w-4 h-4 text-left text-left" /> Raw Output</div>
                     <div className="bg-slate-900 rounded-3xl p-8 overflow-hidden shadow-2xl border border-slate-800 text-left">
                       {discoveryResult.isHtml ? (
-                         <div className="space-y-4 text-left text-left">
-                            <div className="flex items-center gap-2 text-rose-400 text-[10px] font-bold uppercase text-left text-left text-left text-left text-left text-left"><Info className="w-3 h-3 text-left" /> Stále 404 - Server odmietol kombináciu</div>
+                         <div className="space-y-4 text-left text-left text-left">
+                            <div className="flex items-center gap-2 text-rose-400 text-[10px] font-bold uppercase text-left text-left text-left text-left text-left text-left"><Info className="w-3 h-3 text-left" /> HTML 404 (IIS Server Error)</div>
                             <div className="text-slate-500 text-[10px] font-mono break-all opacity-50 text-left text-left text-left text-left">{discoveryResult.payload?.raw}</div>
                          </div>
                       ) : (
@@ -362,7 +391,7 @@ export default function App() {
       {showSettings && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-6 animate-in fade-in duration-300">
           <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg p-10 space-y-10 animate-in zoom-in-95 text-left text-left">
-            <div className="flex items-center justify-between text-left text-left text-left text-left">
+            <div className="flex items-center justify-between text-left text-left text-left text-left text-left">
               <h3 className="text-2xl font-black text-slate-900 tracking-tight text-left text-left text-left text-left">Nastavenia API</h3>
               <button onClick={() => setShowSettings(false)} className="p-3.5 hover:bg-slate-50 rounded-2xl border border-slate-100 text-slate-400 text-left text-left text-left text-left"><X className="text-left text-slate-400" /></button>
             </div>
